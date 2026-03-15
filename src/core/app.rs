@@ -16,7 +16,7 @@ pub enum AppEvent {
     Error(String),
 }
 
-pub enum UiCmd {
+pub enum UxCmd {
     SubmitLogin {
         url: String,
         uname: String,
@@ -37,7 +37,7 @@ enum AppState {
 pub struct App {
     state: AppState,
     event_tx: Sender<AppEvent>,
-    command_rx: Receiver<UiCmd>,
+    command_rx: Receiver<UxCmd>,
 
     config: Option<ConfigService>,
     client: Option<ClientService>,
@@ -45,7 +45,7 @@ pub struct App {
 }
 
 impl App {
-    pub async fn run(event: Sender<AppEvent>, command: Receiver<UiCmd>) -> Result<(), Error> {
+    pub async fn run(event: Sender<AppEvent>, command: Receiver<UxCmd>) -> Result<(), Error> {
         let mut app = App {
             state: AppState::Uninitialized,
             event_tx: event,
@@ -107,14 +107,14 @@ impl App {
     async fn event_loop(&mut self) -> Result<(), Error> {
         while let Ok(cmd) = self.command_rx.recv().await {
             match cmd {
-                UiCmd::SubmitLogin {
+                UxCmd::SubmitLogin {
                     url,
                     uname,
                     password,
                 } => {
                     self.try_login(&url, &uname, &password).await?;
                 }
-                UiCmd::Logout => {
+                UxCmd::Logout => {
                     self.client = None;
                     self.state = AppState::NeedsLogin;
                     self.event_tx.send(AppEvent::NeedsLogin).await?;
