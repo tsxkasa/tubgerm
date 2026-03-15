@@ -18,3 +18,7 @@ keyring = "3.6.3"
 url-normalizer = "0.2.0"
 submarine = { version = "0.1.1", features = ["navidrome"] }
 url = "2.5.8"
+serde = { version = "1.0.228", features = ["derive"] }
+directories = "6.0.0"
+toml = "1.0.6"
+config = "0.15.21"

@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use futures::channel::mpsc::{self, channel};
 
 use crate::core::app::App;
 
@@ -9,8 +10,9 @@ mod ux;
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
+    // let (tx, rx) = mpsc::channel(10);
 
-    let app = App::new().await?;
+    // App::run(tx, rx);
 
     Ok(())
 }
