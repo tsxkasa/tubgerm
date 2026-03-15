@@ -1,47 +1,47 @@
 use color_eyre::eyre::Error;
-use keyring::Entry;
-use submarine::Client;
 use url::Url;
 use zeroize::Zeroize;
 
-use crate::core::{fetch::Fetcher, user_data::UserData};
+use crate::services::{client::ClientService, config::ConfigService, keyring::KeyringService};
 
 #[derive(Debug)]
 pub struct App {
-    user_data: UserData,
-    client: Client,
+    config_manager: ConfigService,
+    client_manager: ClientService,
+    login_manager: KeyringService,
 }
 
 impl App {
     pub async fn new() -> Result<Self, Error> {
-        use std::io::{self, Write};
-        let mut fetcher = Fetcher::default();
-        let user_data = UserData::load();
+        // TODO: finish this
+        let url = "placeholder".to_string();
+        let uname = "placeholder".to_string();
+        let mut password = "placeholder".to_string();
 
-        let mut password: String = {
-            use rpassword::read_password;
-            print!("Enter password: ");
-            io::stdout().flush().unwrap();
-            read_password().expect("Failed to read <password>")
-        };
+        let conf_mgr = ConfigService::new(url.as_str(), uname.as_str());
         password = password.trim().to_string();
-        let client = async {
-            fetcher
-                .create_client(user_data.server(), user_data.username(), password.as_str())
+
+        let mut cli_mgr = ClientService::default();
+        async {
+            cli_mgr
+                .create_client(url.as_str(), uname.as_str(), password.as_str())
                 .await
         }
         .await?;
 
         // do this after; more time password in raw mem but less contact with OS
-        let server = Url::parse(user_data.server())?;
+        let server = Url::parse(url.as_str())?;
         let service = format!(
             "org.tubgerm.subsonic.server:{}",
             url_normalizer::normalize(server).unwrap().as_str()
         );
-        let entry = Entry::new(service.as_str(), user_data.username())?;
-        entry.set_password(password.as_str())?;
+        let login_mgr = KeyringService::new(service.as_str(), uname.as_str())?;
         password.zeroize();
-        Ok(App { user_data, client })
+        Ok(App {
+            config_manager: conf_mgr,
+            client_manager: cli_mgr,
+            login_manager: login_mgr,
+        })
     }
 
     pub async fn run(&mut self) -> Result<(), Error> {
