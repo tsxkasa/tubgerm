@@ -1,4 +1,4 @@
-use color_eyre::eyre::Error;
+use color_eyre::eyre::Result;
 use config::{Config as ConfigLoader, File as ConfigFile, FileFormat};
 use directories::ProjectDirs;
 use std::{
@@ -13,7 +13,7 @@ use crate::services::config::config_data::Config;
 pub struct ConfigService;
 
 impl ConfigService {
-    fn config_path() -> Result<PathBuf, Error> {
+    fn config_path() -> Result<PathBuf> {
         let proj_dirs = ProjectDirs::from("", "", "tubgerm")
             .ok_or_else(|| color_eyre::eyre::eyre!("Could not determine config directory"))?;
 
@@ -26,7 +26,7 @@ impl ConfigService {
         Ok(path)
     }
 
-    pub fn load() -> Result<Config, Error> {
+    pub fn load() -> Result<Config> {
         let path = Self::config_path()?;
 
         if !path.exists() {
@@ -40,7 +40,7 @@ impl ConfigService {
         Ok(settings.try_deserialize()?)
     }
 
-    pub fn save(cfg: &Config) -> Result<(), Error> {
+    pub fn save(cfg: &Config) -> Result<()> {
         let path = Self::config_path()?;
         let toml = toml::to_string_pretty(cfg)?;
         fs::write(path, toml)?;
@@ -49,14 +49,14 @@ impl ConfigService {
 
     // INFO: ADD set_<CONFIG>() for every field
 
-    pub fn set_username(key: &str) -> Result<(), Error> {
+    pub fn set_username(key: &str) -> Result<()> {
         let mut cfg = Self::load()?;
         cfg.credentials.username = key.to_string();
         Self::save(&cfg)?;
         Ok(())
     }
 
-    pub fn set_server(key: &str) -> Result<(), Error> {
+    pub fn set_server(key: &str) -> Result<()> {
         let mut cfg = Self::load()?;
         cfg.credentials.server = key.to_string();
         Self::save(&cfg)?;

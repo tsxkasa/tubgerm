@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use color_eyre::eyre::Error;
+use color_eyre::eyre::{Error, Result};
 use submarine::{Client, auth::AuthBuilder};
 
 #[derive(Default, Debug)]
@@ -9,7 +9,7 @@ pub struct ClientService {
 }
 
 impl ClientService {
-    pub async fn create_client(&mut self, url: &str, uname: &str, pw: &str) -> Result<(), Error> {
+    pub async fn create_client(&mut self, url: &str, uname: &str, pw: &str) -> Result<()> {
         let auth = AuthBuilder::new(uname, "1.16.1")
             .client_name("org.tubgerm")
             .hashed(pw);

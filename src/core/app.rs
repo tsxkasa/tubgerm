@@ -1,29 +1,10 @@
-use color_eyre::eyre::Error;
-use config::Config;
-use futures::{
-    SinkExt,
-    channel::mpsc::{Receiver, Sender},
+use color_eyre::eyre::Result;
+use tokio::sync::mpsc::{Receiver, Sender};
+
+use crate::{
+    core::event::{AppEvent, UiCmd},
+    services::{client::ClientService, config::config::ConfigService, keyring::KeyringService},
 };
-
-use crate::services::{
-    self, client::ClientService, config::config::ConfigService, keyring::KeyringService,
-};
-
-pub enum AppEvent {
-    NeedsLogin,
-    LoginError(String),
-    Ready,
-    Error(String),
-}
-
-pub enum UxCmd {
-    SubmitLogin {
-        url: String,
-        uname: String,
-        password: String,
-    },
-    Logout,
-}
 
 #[derive(Default, Debug)]
 enum AppState {
@@ -37,7 +18,7 @@ enum AppState {
 pub struct App {
     state: AppState,
     event_tx: Sender<AppEvent>,
-    command_rx: Receiver<UxCmd>,
+    command_rx: Receiver<UiCmd>,
 
     config: Option<ConfigService>,
     client: Option<ClientService>,
@@ -45,11 +26,11 @@ pub struct App {
 }
 
 impl App {
-    pub async fn run(event: Sender<AppEvent>, command: Receiver<UxCmd>) -> Result<(), Error> {
-        let mut app = App {
+    pub async fn run(event_tx: Sender<AppEvent>, command_rx: Receiver<UiCmd>) -> Result<()> {
+        let mut app = Self {
             state: AppState::Uninitialized,
-            event_tx: event,
-            command_rx: command,
+            event_tx,
+            command_rx,
             config: None,
             client: None,
             keyring: None,
@@ -60,7 +41,7 @@ impl App {
         Ok(())
     }
 
-    async fn init(&mut self) -> Result<(), Error> {
+    async fn init(&mut self) -> Result<()> {
         // init client first, important!!
         self.client = Some(ClientService::default());
 
@@ -104,17 +85,17 @@ impl App {
         Ok(())
     }
 
-    async fn event_loop(&mut self) -> Result<(), Error> {
-        while let Ok(cmd) = self.command_rx.recv().await {
+    async fn event_loop(&mut self) -> Result<()> {
+        while let Some(cmd) = self.command_rx.recv().await {
             match cmd {
-                UxCmd::SubmitLogin {
+                UiCmd::SubmitLogin {
                     url,
                     uname,
                     password,
                 } => {
                     self.try_login(&url, &uname, &password).await?;
                 }
-                UxCmd::Logout => {
+                UiCmd::Logout => {
                     self.client = None;
                     self.state = AppState::NeedsLogin;
                     self.event_tx.send(AppEvent::NeedsLogin).await?;
@@ -124,12 +105,7 @@ impl App {
         Ok(())
     }
 
-    async fn try_login(
-        &mut self,
-        server: &str,
-        username: &str,
-        password: &str,
-    ) -> Result<(), Error> {
+    async fn try_login(&mut self, server: &str, username: &str, password: &str) -> Result<()> {
         let mut client_svc = ClientService::default();
         match client_svc.create_client(server, username, password).await {
             Ok(()) => {
