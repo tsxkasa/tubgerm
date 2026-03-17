@@ -33,14 +33,16 @@ pub enum NotifKind {
 pub struct Ui {
     state: UiState,
     pub spinner_tick: u8,
+    event_rx: Receiver<AppEvent>,
     command_tx: Sender<UiCmd>,
 }
 
 impl Ui {
-    pub fn new(command_tx: Sender<UiCmd>) -> Self {
+    pub fn new(event_rx: Receiver<AppEvent>, command_tx: Sender<UiCmd>) -> Self {
         Self {
             state: UiState::Loading,
             spinner_tick: 0,
+            event_rx,
             command_tx,
         }
     }
@@ -147,6 +149,10 @@ impl Ui {
         }
 
         Ok(true)
+    }
+
+    pub fn event_rx(&mut self) -> &mut Receiver<AppEvent> {
+        &mut self.event_rx
     }
 
     pub fn command_tx(&mut self) -> &mut Sender<UiCmd> {

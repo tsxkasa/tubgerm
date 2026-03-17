@@ -18,9 +18,9 @@ const TICK_RATE: Duration = Duration::from_millis(250);
 pub async fn run(
     term: &mut DefaultTerminal,
     cmd_tx: Sender<UiCmd>,
-    event_rx: &mut Receiver<AppEvent>,
+    event_rx: Receiver<AppEvent>,
 ) -> Result<()> {
-    let mut ui = Ui::new(cmd_tx);
+    let mut ui = Ui::new(event_rx, cmd_tx);
     let mut crossterm_events = EventStream::new();
     let mut tick = interval(TICK_RATE);
 
@@ -34,7 +34,7 @@ pub async fn run(
                     _ => break,
                 }
             }
-            app_event_opt = event_rx.recv() => {
+            app_event_opt = ui.event_rx().recv() => {
                 match app_event_opt {
                     Some(app_event) => Event::App(app_event),
                     None => break,
