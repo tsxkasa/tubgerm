@@ -111,15 +111,24 @@ impl App {
             Ok(()) => {
                 // store password, finalize all services
                 if self.keyring.is_none() {
-                    self.state = AppState::Uninitialized;
+                    match KeyringService::new(server, username) {
+                        Ok(new_keyring) => self.keyring = Some(new_keyring),
+                        Err(e) => {
+                            self.event_tx
+                                .send(AppEvent::Error(format!("Could not create keyring: {}", e)))
+                                .await?;
+                            return Ok(());
+                        }
+                    }
+                }
+                if let Some(k) = &self.keyring
+                    && let Err(e) = k.set_password(password)
+                {
                     self.event_tx
-                        .send(AppEvent::Error("Weird keyring state: aborting".to_string()))
+                        .send(AppEvent::Error(format!("Keyring save failed: {}", e)))
                         .await?;
-                    return Ok(());
                 }
-                if let Some(k) = &self.keyring {
-                    k.set_password(password)?;
-                }
+
                 self.config = Some(ConfigService {});
                 ConfigService::set_server(server)?;
                 ConfigService::set_username(username)?;

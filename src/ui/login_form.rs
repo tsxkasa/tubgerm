@@ -1,9 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
-    widgets::{Block, Borders, Paragraph},
+    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
+    style::{Color, Modifier, Style},
+    text::Line,
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 use ratatui_textarea::TextArea;
 
@@ -18,72 +19,159 @@ pub enum LoginField {
     Submit,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct LoginForm {
-    pub server: String,
-    pub username: String,
-    pub password: String,
+    pub server: TextArea<'static>,
+    pub username: TextArea<'static>,
+    pub password: TextArea<'static>,
     pub focus: LoginField,
     pub error: Option<String>,
 }
 
+impl Default for LoginForm {
+    fn default() -> Self {
+        let mut server = TextArea::default();
+        server.set_placeholder_style(Style::default().fg(Color::Gray));
+        server.set_placeholder_text("https://server.example");
+
+        let mut username = TextArea::default();
+        username.set_placeholder_style(Style::default().fg(Color::Gray));
+        username.set_placeholder_text("username");
+
+        let mut password = TextArea::default();
+        password.set_placeholder_style(Style::default().fg(Color::Gray));
+        password.set_placeholder_text("password");
+        password.set_mask_char('\u{2022}');
+
+        server.set_style(Style::default());
+        username.set_style(Style::default());
+        password.set_style(Style::default());
+
+        Self {
+            server,
+            username,
+            password,
+            focus: LoginField::Url,
+            error: None,
+        }
+    }
+}
+
 impl LoginForm {
-    pub fn render(&self, frame: &mut Frame) {
-        let chunks = Layout::default()
+    pub fn render(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+
+        let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // URL
+                Constraint::Min(0),
+                Constraint::Length(14),
+                Constraint::Min(0),
+            ])
+            .split(area);
+
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(25),
+                Constraint::Percentage(50),
+                Constraint::Percentage(25),
+            ])
+            .split(vertical[1]);
+
+        let form_area = horizontal[1];
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(3), // Server
                 Constraint::Length(3), // Username
                 Constraint::Length(3), // Password
-                Constraint::Length(1), // Error line
+                Constraint::Length(2), // Submit
+                Constraint::Length(1), // Error
             ])
-            .split(frame.area());
+            .split(form_area);
 
-        let url_style = if self.focus == LoginField::Url {
-            ratatui::style::Style::default().fg(ratatui::style::Color::LightMagenta)
-        } else {
-            ratatui::style::Style::default()
-        };
-
+        frame.render_widget(Clear, form_area);
         frame.render_widget(
-            Paragraph::new(self.server.as_str()).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Server URL")
-                    .style(url_style),
-            ),
-            chunks[0],
+            Block::default().title(" Login ").borders(Borders::ALL),
+            form_area,
         );
 
-        let username_style = if self.focus == LoginField::Username {
-            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan)
-        } else {
-            ratatui::style::Style::default()
-        };
-        frame.render_widget(
-            Paragraph::new(self.username.as_str()).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Username")
-                    .style(username_style),
-            ),
-            chunks[1],
-        );
+        let focused = Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD);
+        let normal = Style::default().fg(Color::White);
 
-        let password_style = if self.focus == LoginField::Password {
-            ratatui::style::Style::default().fg(ratatui::style::Color::LightBlue)
+        let server_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Server URL ")
+            .style(if self.focus == LoginField::Url {
+                focused
+            } else {
+                normal
+            });
+
+        self.server.set_block(server_block);
+        frame.render_widget(&self.server, chunks[0]);
+
+        let username_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Username ")
+            .style(if self.focus == LoginField::Username {
+                focused
+            } else {
+                normal
+            });
+
+        self.username.set_block(username_block);
+        frame.render_widget(&self.username, chunks[1]);
+
+        let password_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Password ")
+            .style(if self.focus == LoginField::Password {
+                focused
+            } else {
+                normal
+            });
+
+        self.password.set_block(password_block);
+        frame.render_widget(&self.password, chunks[2]);
+
+        let submit_style = if self.focus == LoginField::Submit {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD)
         } else {
-            ratatui::style::Style::default()
+            Style::default().fg(Color::Green)
         };
-        frame.render_widget(
-            Paragraph::new(self.password.as_str()).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Password")
-                    .style(password_style),
-            ),
-            chunks[2],
-        );
+
+        let submit_block = Block::default().borders(Borders::ALL);
+        let submit = Paragraph::new(Line::from(" Submit "))
+            .alignment(Alignment::Center)
+            .style(submit_style)
+            .block(submit_block);
+
+        frame.render_widget(submit, chunks[3]);
+
+        if let Some(err) = &self.error {
+            frame.render_widget(
+                Paragraph::new(err.clone())
+                    .alignment(Alignment::Center)
+                    .style(Style::default().fg(Color::Red)),
+                chunks[4],
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new("Tab: move • Enter: submit • Esc: cancel")
+                    .alignment(Alignment::Center)
+                    .style(Style::default().fg(Color::Gray)),
+                chunks[4],
+            );
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<UiCmd> {
@@ -98,37 +186,26 @@ impl LoginForm {
                 };
             }
             KeyCode::Enter => {
-                if matches!(self.focus, LoginField::Submit)
-                    || (!self.server.is_empty()
-                        && !self.username.is_empty()
-                        && !self.password.is_empty())
-                {
+                if self.focus == LoginField::Submit {
                     return Some(UiCmd::SubmitLogin {
-                        url: self.server.clone(),
-                        uname: self.username.clone(),
-                        password: self.password.clone(),
+                        url: self.server.lines().join(""),
+                        uname: self.username.lines().join(""),
+                        password: self.password.lines().join(""),
                     });
                 }
             }
-            KeyCode::Char(c) => match self.focus {
-                LoginField::Url => self.server.push(c),
-                LoginField::Username => self.username.push(c),
-                LoginField::Password => self.password.push(c),
-                _ => {}
-            },
-            KeyCode::Backspace => match self.focus {
+            _ => match self.focus {
                 LoginField::Url => {
-                    self.server.pop();
+                    self.server.input(key);
                 }
                 LoginField::Username => {
-                    self.username.pop();
+                    self.username.input(key);
                 }
                 LoginField::Password => {
-                    self.password.pop();
+                    self.password.input(key);
                 }
-                _ => {}
+                LoginField::Submit => {}
             },
-            _ => {}
         }
         None
     }

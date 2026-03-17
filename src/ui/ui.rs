@@ -47,8 +47,8 @@ impl Ui {
         }
     }
 
-    pub fn render(&self, frame: &mut Frame) {
-        match &self.state {
+    pub fn render(&mut self, frame: &mut Frame) {
+        match &mut self.state {
             UiState::Loading => {
                 let frames = ["|", "/", "-", "\\"];
                 let text = format!(
