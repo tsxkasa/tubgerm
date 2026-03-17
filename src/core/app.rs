@@ -110,6 +110,12 @@ impl App {
         match client_svc.create_client(server, username, password).await {
             Ok(()) => {
                 // store password, finalize all services
+                if self.keyring.is_none() {
+                    self.state = AppState::Uninitialized;
+                    self.event_tx
+                        .send(AppEvent::Error("Weird keyring state: aborting".to_string()));
+                    return Ok(());
+                }
                 if let Some(k) = &self.keyring {
                     k.set_password(password)?;
                 }

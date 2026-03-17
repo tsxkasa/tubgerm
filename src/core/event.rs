@@ -1,3 +1,5 @@
+use crate::ui::ui::NotifKind;
+
 #[derive(Debug)]
 pub enum Event {
     Crossterm(crossterm::event::Event),
@@ -10,6 +12,7 @@ pub enum AppEvent {
     NeedsLogin,
     LoginError(String),
     Ready,
+    Notify(String, NotifKind),
     Error(String),
 }
 

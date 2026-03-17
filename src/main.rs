@@ -16,14 +16,17 @@ mod ui;
 async fn main() -> Result<()> {
     color_eyre::install()?;
     let (cmd_tx, cmd_rx) = mpsc::channel::<UiCmd>(32);
-    let (event_tx, event_rx) = mpsc::channel::<AppEvent>(32);
+    let (event_tx, mut event_rx) = mpsc::channel::<AppEvent>(32);
 
     let app_task = tokio::spawn(async move { App::run(event_tx, cmd_rx).await });
-    let ui_task = tokio::spawn(async move { runtime::run(cmd_tx, event_rx).await });
+    let mut term = ratatui::init();
+    let ui_res = runtime::run(&mut term, cmd_tx, &mut event_rx).await;
+    ratatui::restore();
 
-    tokio::select! {
-        _ = app_task => {},
-        _ = ui_task => {},
+    if app_task.is_finished() {
+        app_task.await??;
+    } else {
+        app_task.abort();
     }
 
     Ok(())

@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Error, Result};
+use color_eyre::eyre::Result;
 use crossterm::event::EventStream;
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
@@ -15,19 +15,12 @@ use crate::{
 
 const TICK_RATE: Duration = Duration::from_millis(250);
 
-pub async fn run(cmd_tx: Sender<UiCmd>, event_rx: Receiver<AppEvent>) -> Result<()> {
-    let mut term = ratatui::init();
-    let result = main_run(&mut term, event_rx, cmd_tx).await;
-    ratatui::restore();
-    result
-}
-
-async fn main_run(
+pub async fn run(
     term: &mut DefaultTerminal,
-    event_rx: Receiver<AppEvent>,
     cmd_tx: Sender<UiCmd>,
+    event_rx: &mut Receiver<AppEvent>,
 ) -> Result<()> {
-    let mut ui = Ui::new(event_rx, cmd_tx);
+    let mut ui = Ui::new(cmd_tx);
     let mut crossterm_events = EventStream::new();
     let mut tick = interval(TICK_RATE);
 
@@ -35,11 +28,17 @@ async fn main_run(
         term.draw(|f| ui.render(f))?;
 
         let event = tokio::select! {
-            Some(Ok(ct_event)) = crossterm_events.next() => {
-                Event::Crossterm(ct_event)
+           ct_event_opt = crossterm_events.next() => {
+                match ct_event_opt {
+                    Some(Ok(ct_event)) => Event::Crossterm(ct_event),
+                    _ => break,
+                }
             }
-            Some(app_event) = ui.event_rx().recv() => {
-                Event::App(app_event)
+            app_event_opt = event_rx.recv() => {
+                match app_event_opt {
+                    Some(app_event) => Event::App(app_event),
+                    None => break,
+                }
             }
             _ = tick.tick() => {
                 Event::Tick

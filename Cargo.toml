@@ -22,3 +22,4 @@ serde = { version = "1.0.228", features = ["derive"] }
 directories = "6.0.0"
 toml = "1.0.6"
 config = "0.15.21"
+ratatui-textarea = "0.8.0"

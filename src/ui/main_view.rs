@@ -1,2 +1,10 @@
-#[derive(Debug)]
-pub struct MainView {}
+#[derive(Default, Debug)]
+enum Panel {
+    #[default]
+    PLACEHOLDER,
+}
+
+#[derive(Default, Debug)]
+pub struct MainView {
+    focus: Panel,
+}
