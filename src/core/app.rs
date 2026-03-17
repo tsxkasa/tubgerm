@@ -113,7 +113,8 @@ impl App {
                 if self.keyring.is_none() {
                     self.state = AppState::Uninitialized;
                     self.event_tx
-                        .send(AppEvent::Error("Weird keyring state: aborting".to_string()));
+                        .send(AppEvent::Error("Weird keyring state: aborting".to_string()))
+                        .await?;
                     return Ok(());
                 }
                 if let Some(k) = &self.keyring {

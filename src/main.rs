@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
 
     let app_task = tokio::spawn(async move { App::run(event_tx, cmd_rx).await });
     let mut term = ratatui::init();
-    let ui_res = runtime::run(&mut term, cmd_tx, &mut event_rx).await;
+    let ui_res = runtime::run(&mut term, cmd_tx, event_rx).await;
     ratatui::restore();
 
     if app_task.is_finished() {
