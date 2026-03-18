@@ -117,9 +117,10 @@ impl Ui {
                 if let UiState::Login(form) = &mut self.state {
                     form.error = Some(e);
                 } else {
-                    let mut form = LoginForm::default();
-                    form.error = Some(e);
-                    self.state = UiState::Login(form);
+                    self.state = UiState::Login(LoginForm {
+                        error: Some(e),
+                        ..Default::default()
+                    });
                 }
             }
             AppEvent::Ready => self.state = UiState::Main(MainView::default()),

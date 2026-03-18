@@ -11,7 +11,8 @@ use crate::services::config::config_data::Config;
 
 #[derive(Debug)]
 pub struct ConfigService {
-    pub config: Option<Config>,
+    config: Config,
+    path: PathBuf,
 }
 
 impl ConfigService {
@@ -28,6 +29,20 @@ impl ConfigService {
         Ok(path)
     }
 
+    pub fn new() -> Result<Self> {
+        let path = Self::config_path()?;
+        let config = if path.exists() {
+            let settings = ConfigLoader::builder()
+                .add_source(ConfigFile::from(path.clone()).format(FileFormat::Toml))
+                .build()?;
+            settings.try_deserialize()?
+        } else {
+            Config::default()
+        };
+
+        Ok(Self { config, path })
+    }
+
     pub fn load() -> Result<Config> {
         let path = Self::config_path()?;
 
@@ -42,18 +57,16 @@ impl ConfigService {
         Ok(settings.try_deserialize()?)
     }
 
-    pub fn save(cfg: &Config) -> Result<()> {
-        let path = Self::config_path()?;
-        let toml = toml::to_string_pretty(cfg)?;
-        fs::write(path, toml)?;
+    pub fn save(&self) -> Result<()> {
+        let toml = toml::to_string_pretty(&self.config)?;
+        fs::write(&self.path, toml)?;
         Ok(())
     }
 
     // INFO: ADD set_<CONFIG>() for every field
-    pub fn set_credentials(server: &str, username: &str) -> Result<()> {
-        let mut cfg = Self::load()?;
-        cfg.credentials.server = server.to_string();
-        cfg.credentials.username = username.to_string();
-        Self::save(&cfg)
+    pub fn set_credentials(&mut self, server: &str, username: &str) -> Result<()> {
+        self.config.credentials.server = server.to_string();
+        self.config.credentials.username = username.to_string();
+        Ok(())
     }
 }

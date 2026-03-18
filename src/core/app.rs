@@ -187,8 +187,14 @@ impl App {
                     self.warn(format!("Keyring save failed: {}", e)).await?;
                 }
 
-                self.config = Some(ConfigService { config: None });
-                ConfigService::set_credentials(server, username)?;
+                self.config = Some(ConfigService::new()?);
+                self.config
+                    .as_mut()
+                    .unwrap()
+                    .set_credentials(server, username)?;
+                if let Err(e) = self.config.as_mut().unwrap().save() {
+                    self.warn(format!("Failed to save config: {}", e)).await?;
+                }
                 self.client = Some(client_svc);
                 self.state = AppState::LoggedIn;
                 self.event_tx.send(AppEvent::Ready).await?;
