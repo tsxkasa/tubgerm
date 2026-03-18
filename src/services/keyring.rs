@@ -13,6 +13,11 @@ impl KeyringService {
         Ok(Self { entry })
     }
 
+    pub fn delete_credential(&self) -> Result<()> {
+        self.entry.delete_credential()?;
+        Ok(())
+    }
+
     pub fn get_password(&self) -> Result<Option<String>> {
         match self.entry.get_password() {
             Ok(v) => Ok(Some(v)),

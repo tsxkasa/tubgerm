@@ -8,7 +8,7 @@ use ratatui::{
     style::{Color, Style},
     widgets::{Block, Borders, Paragraph},
 };
-use ratatui_notifications::{Notification, Notifications, notifications};
+use ratatui_notifications::{Notification, Notifications};
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{

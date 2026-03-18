@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent};
+use enum_iterator::{Sequence, next, next_cycle};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -10,7 +11,7 @@ use ratatui_textarea::TextArea;
 
 use crate::core::event::UiCmd;
 
-#[derive(Default, Debug, PartialEq, Eq)]
+#[derive(Default, Debug, PartialEq, Eq, Sequence)]
 pub enum LoginField {
     #[default]
     Url,
@@ -21,9 +22,9 @@ pub enum LoginField {
 
 #[derive(Debug)]
 pub struct LoginForm {
-    pub server: TextArea<'static>,
-    pub username: TextArea<'static>,
-    pub password: TextArea<'static>,
+    pub server: Box<TextArea<'static>>,
+    pub username: Box<TextArea<'static>>,
+    pub password: Box<TextArea<'static>>,
     pub focus: LoginField,
     pub error: Option<String>,
 }
@@ -48,9 +49,9 @@ impl Default for LoginForm {
         password.set_style(Style::default());
 
         Self {
-            server,
-            username,
-            password,
+            server: Box::new(server),
+            username: Box::new(username),
+            password: Box::new(password),
             focus: LoginField::Url,
             error: None,
         }
@@ -114,7 +115,7 @@ impl LoginForm {
             });
 
         self.server.set_block(server_block);
-        frame.render_widget(&self.server, chunks[0]);
+        frame.render_widget(&*self.server, chunks[0]);
 
         let username_block = Block::default()
             .borders(Borders::ALL)
@@ -126,7 +127,7 @@ impl LoginForm {
             });
 
         self.username.set_block(username_block);
-        frame.render_widget(&self.username, chunks[1]);
+        frame.render_widget(&*self.username, chunks[1]);
 
         let password_block = Block::default()
             .borders(Borders::ALL)
@@ -138,7 +139,7 @@ impl LoginForm {
             });
 
         self.password.set_block(password_block);
-        frame.render_widget(&self.password, chunks[2]);
+        frame.render_widget(&*self.password, chunks[2]);
 
         let submit_style = if self.focus == LoginField::Submit {
             Style::default()
@@ -178,12 +179,7 @@ impl LoginForm {
         match key.code {
             KeyCode::Tab => {
                 // Switch focus
-                self.focus = match self.focus {
-                    LoginField::Url => LoginField::Username,
-                    LoginField::Username => LoginField::Password,
-                    LoginField::Password => LoginField::Submit,
-                    LoginField::Submit => LoginField::Url,
-                };
+                self.focus = next_cycle(&self.focus);
             }
             KeyCode::Enter => {
                 if self.focus == LoginField::Submit {
@@ -192,6 +188,8 @@ impl LoginForm {
                         uname: self.username.lines().join(""),
                         password: self.password.lines().join(""),
                     });
+                } else {
+                    self.focus = next(&self.focus).unwrap();
                 }
             }
             _ => match self.focus {
