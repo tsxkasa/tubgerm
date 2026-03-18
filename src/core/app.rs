@@ -95,12 +95,6 @@ impl App {
         )?;
         self.keyring = Some(keyring);
 
-        self.debug(format!(
-            "org.tubgerm.{}@{}",
-            config.credentials.username, config.credentials.server
-        ))
-        .await?;
-
         match self.keyring.as_ref().unwrap().get_password() {
             Ok(Some(pw)) => {
                 if self
@@ -187,14 +181,10 @@ impl App {
                         }
                     }
                 }
-                if let Some(k) = &self.keyring {
-                    match k.set_password(password) {
-                        Ok(()) => self.info("Password saved to keyring").await?,
-                        Err(e) => self.warn(format!("Keyring save failed: {}", e)).await?,
-                    }
-                } else {
-                    self.warn("Keyring was None when trying to save password")
-                        .await?;
+                if let Some(k) = &self.keyring
+                    && let Err(e) = k.set_password(password)
+                {
+                    self.warn(format!("Keyring save failed: {}", e)).await?;
                 }
 
                 self.config = Some(ConfigService { config: None });

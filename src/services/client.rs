@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use color_eyre::eyre::{Error, Result, eyre};
+use color_eyre::eyre::{Result, eyre};
 use submarine::{Client, auth::AuthBuilder};
 
 #[derive(Default, Debug)]
