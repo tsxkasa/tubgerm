@@ -1,19 +1,28 @@
-use crate::ui::ui::NotifKind;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub enum Event {
     Crossterm(crossterm::event::Event),
     App(AppEvent),
-    Tick,
+    Tick(Duration),
 }
 
 #[derive(Debug)]
 pub enum AppEvent {
-    NeedsLogin,
+    NeedsLogin { server: String, username: String },
     LoginError(String),
     Ready,
-    Notify(String, NotifKind),
+    Notify(String, NotifLevel),
     Error(String),
+}
+
+#[derive(Debug)]
+pub enum NotifLevel {
+    Info,
+    Warning,
+    Error,
+    Debug,
+    Trace,
 }
 
 #[derive(Debug)]

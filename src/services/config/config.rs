@@ -10,7 +10,9 @@ use std::{
 use crate::services::config::config_data::Config;
 
 #[derive(Debug)]
-pub struct ConfigService;
+pub struct ConfigService {
+    pub config: Option<Config>,
+}
 
 impl ConfigService {
     fn config_path() -> Result<PathBuf> {
@@ -48,18 +50,10 @@ impl ConfigService {
     }
 
     // INFO: ADD set_<CONFIG>() for every field
-
-    pub fn set_username(key: &str) -> Result<()> {
+    pub fn set_credentials(server: &str, username: &str) -> Result<()> {
         let mut cfg = Self::load()?;
-        cfg.credentials.username = key.to_string();
-        Self::save(&cfg)?;
-        Ok(())
-    }
-
-    pub fn set_server(key: &str) -> Result<()> {
-        let mut cfg = Self::load()?;
-        cfg.credentials.server = key.to_string();
-        Self::save(&cfg)?;
-        Ok(())
+        cfg.credentials.server = server.to_string();
+        cfg.credentials.username = username.to_string();
+        Self::save(&cfg)
     }
 }

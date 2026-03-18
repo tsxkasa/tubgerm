@@ -13,7 +13,7 @@ use crate::{
     ui::ui::Ui,
 };
 
-const TICK_RATE: Duration = Duration::from_millis(250);
+const TICK_RATE: Duration = Duration::from_millis(16);
 
 pub async fn run(
     term: &mut DefaultTerminal,
@@ -41,7 +41,7 @@ pub async fn run(
                 }
             }
             _ = tick.tick() => {
-                Event::Tick
+                Event::Tick(TICK_RATE)
             }
         };
 

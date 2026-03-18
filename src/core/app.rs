@@ -2,7 +2,7 @@ use color_eyre::eyre::Result;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{
-    core::event::{AppEvent, UiCmd},
+    core::event::{AppEvent, NotifLevel, UiCmd},
     services::{client::ClientService, config::config::ConfigService, keyring::KeyringService},
 };
 
@@ -41,13 +41,50 @@ impl App {
         Ok(())
     }
 
+    #[allow(unused)]
+    async fn warn(&self, msg: impl Into<String>) -> Result<()> {
+        self.event_tx
+            .send(AppEvent::Notify(msg.into(), NotifLevel::Warning))
+            .await?;
+        Ok(())
+    }
+
+    #[allow(unused)]
+    async fn error(&self, msg: impl Into<String>) -> Result<()> {
+        self.event_tx
+            .send(AppEvent::Notify(msg.into(), NotifLevel::Error))
+            .await?;
+        Ok(())
+    }
+
+    #[allow(unused)]
+    async fn info(&self, msg: impl Into<String>) -> Result<()> {
+        self.event_tx
+            .send(AppEvent::Notify(msg.into(), NotifLevel::Info))
+            .await?;
+        Ok(())
+    }
+
+    #[allow(unused)]
+    async fn debug(&self, msg: impl Into<String>) -> Result<()> {
+        self.event_tx
+            .send(AppEvent::Notify(msg.into(), NotifLevel::Debug))
+            .await?;
+        Ok(())
+    }
+
     async fn init(&mut self) -> Result<()> {
         // init client first, important!!
         self.client = Some(ClientService::default());
 
         let config = ConfigService::load()?;
         if config.credentials.username.is_empty() || config.credentials.server.is_empty() {
-            self.event_tx.send(AppEvent::NeedsLogin).await?;
+            self.event_tx
+                .send(AppEvent::NeedsLogin {
+                    server: String::new(),
+                    username: String::new(),
+                })
+                .await?;
             self.state = AppState::NeedsLogin;
             return Ok(());
         }
@@ -56,25 +93,44 @@ impl App {
             config.credentials.server.as_str(),
             config.credentials.username.as_str(),
         )?;
+        self.keyring = Some(keyring);
 
-        match keyring.get_password() {
+        self.debug(format!(
+            "org.tubgerm.{}@{}",
+            config.credentials.username, config.credentials.server
+        ))
+        .await?;
+
+        match self.keyring.as_ref().unwrap().get_password() {
             Ok(Some(pw)) => {
-                self.try_login(
-                    &config.credentials.server,
-                    &config.credentials.username,
-                    &pw,
-                )
-                .await?;
+                if self
+                    .try_login(
+                        &config.credentials.server,
+                        &config.credentials.username,
+                        &pw,
+                    )
+                    .await
+                    .is_err()
+                {
+                    self.warn("Auto-login failed: could not reach server")
+                        .await?;
+                    self.event_tx
+                        .send(AppEvent::NeedsLogin {
+                            server: config.credentials.server.clone(),
+                            username: config.credentials.username.clone(),
+                        })
+                        .await?;
+                    self.state = AppState::NeedsLogin;
+                }
             }
             Ok(None) => {
-                // Config exists but no password stored
-                self.config = Some(ConfigService {});
-
-                // rather set key empty so user can login fresh incase some errors
-                ConfigService::set_server("")?;
-                ConfigService::set_username("")?;
-                self.keyring = Some(keyring);
-                self.event_tx.send(AppEvent::NeedsLogin).await?;
+                self.warn("No saved password found in keyring").await?;
+                self.event_tx
+                    .send(AppEvent::NeedsLogin {
+                        server: config.credentials.server.clone(),
+                        username: config.credentials.username.clone(),
+                    })
+                    .await?;
                 self.state = AppState::NeedsLogin;
             }
             Err(e) => {
@@ -93,12 +149,25 @@ impl App {
                     uname,
                     password,
                 } => {
-                    self.try_login(&url, &uname, &password).await?;
+                    if let Err(e) = self.try_login(&url, &uname, &password).await {
+                        self.error(format!("Could not login: {}", e)).await?;
+                        self.event_tx
+                            .send(AppEvent::NeedsLogin {
+                                server: url,
+                                username: uname,
+                            })
+                            .await?;
+                    }
                 }
                 UiCmd::Logout => {
                     self.client = None;
                     self.state = AppState::NeedsLogin;
-                    self.event_tx.send(AppEvent::NeedsLogin).await?;
+                    self.event_tx
+                        .send(AppEvent::NeedsLogin {
+                            server: String::new(),
+                            username: String::new(),
+                        })
+                        .await?;
                 }
             }
         }
@@ -114,24 +183,22 @@ impl App {
                     match KeyringService::new(server, username) {
                         Ok(new_keyring) => self.keyring = Some(new_keyring),
                         Err(e) => {
-                            self.event_tx
-                                .send(AppEvent::Error(format!("Could not create keyring: {}", e)))
-                                .await?;
-                            return Ok(());
+                            return Err(e);
                         }
                     }
                 }
-                if let Some(k) = &self.keyring
-                    && let Err(e) = k.set_password(password)
-                {
-                    self.event_tx
-                        .send(AppEvent::Error(format!("Keyring save failed: {}", e)))
+                if let Some(k) = &self.keyring {
+                    match k.set_password(password) {
+                        Ok(()) => self.info("Password saved to keyring").await?,
+                        Err(e) => self.warn(format!("Keyring save failed: {}", e)).await?,
+                    }
+                } else {
+                    self.warn("Keyring was None when trying to save password")
                         .await?;
                 }
 
-                self.config = Some(ConfigService {});
-                ConfigService::set_server(server)?;
-                ConfigService::set_username(username)?;
+                self.config = Some(ConfigService { config: None });
+                ConfigService::set_credentials(server, username)?;
                 self.client = Some(client_svc);
                 self.state = AppState::LoggedIn;
                 self.event_tx.send(AppEvent::Ready).await?;

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use color_eyre::eyre::{Error, Result};
+use color_eyre::eyre::{Error, Result, eyre};
 use submarine::{Client, auth::AuthBuilder};
 
 #[derive(Default, Debug)]
@@ -19,9 +19,9 @@ impl ClientService {
         Ok(())
     }
 
-    pub fn client(&self) -> &Client {
+    pub fn client(&self) -> Result<&Client> {
         self.client
             .as_ref()
-            .expect("Unable to get client, client may be uninitialized")
+            .ok_or_else(|| eyre!("Client not initialized"))
     }
 }

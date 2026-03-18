@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::Line,
     widgets::{Block, Borders, Clear, Paragraph},
@@ -208,5 +208,16 @@ impl LoginForm {
             },
         }
         None
+    }
+
+    pub fn with_prefill(server: &str, username: &str) -> Self {
+        let mut form = Self::default();
+        if !server.is_empty() {
+            form.server.insert_str(server);
+        }
+        if !username.is_empty() {
+            form.username.insert_str(username);
+        }
+        form
     }
 }

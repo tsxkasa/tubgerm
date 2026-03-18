@@ -14,7 +14,7 @@ tokio = { version = "1.50.0", features = ["full"] }
 tokio-util = "0.7.18"
 zeroize = "1.8.2"
 rpassword = "7.4.0"
-keyring = "3.6.3"
+keyring = { version = "3.6.3", features = ["apple-native", "linux-native", "windows-native"] }
 url-normalizer = "0.2.0"
 submarine = { version = "0.1.1", features = ["navidrome"] }
 url = "2.5.8"
