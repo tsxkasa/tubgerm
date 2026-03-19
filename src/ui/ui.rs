@@ -65,12 +65,7 @@ impl Ui {
             }
             UiState::Main(form) => {
                 // TODO: PLACEHOLDER
-                frame.render_widget(
-                    Paragraph::new("Main App View - Logged In!")
-                        .alignment(Alignment::Center)
-                        .block(Block::default().borders(Borders::ALL)),
-                    frame.area(),
-                );
+                form.render(frame);
             }
             UiState::FatalError(msg) => {
                 frame.render_widget(
@@ -168,7 +163,12 @@ impl Ui {
                     self.state = UiState::Loading;
                 }
             }
-            UiState::Main(form) => {}
+            UiState::Main(form) => {
+                if let Some(cmd) = form.handle_key(event) {
+                    self.command_tx.send(cmd).await?;
+                    self.state = UiState::Loading;
+                }
+            }
             UiState::FatalError(_) => {
                 return Ok(false);
             }
