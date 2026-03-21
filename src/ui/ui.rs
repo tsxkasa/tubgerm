@@ -151,6 +151,7 @@ impl Ui {
         if event.modifiers.contains(KeyModifiers::CONTROL)
             && (event.code == KeyCode::Char('c') || event.code == KeyCode::Char('q'))
         {
+            self.command_tx.send(UiCmd::Exit).await?;
             // TODO: add interception for <C-c> or <C-q>
             return Ok(false);
         }

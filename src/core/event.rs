@@ -33,4 +33,5 @@ pub enum UiCmd {
         password: String,
     },
     Logout,
+    Exit,
 }

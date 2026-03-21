@@ -12,6 +12,7 @@ enum AppState {
     Uninitialized,
     NeedsLogin,
     LoggedIn,
+    Exited,
 }
 
 #[derive(Debug)]
@@ -155,6 +156,8 @@ impl App {
                 }
                 UiCmd::Logout => {
                     self.client = None;
+                    // WARN: deletes user credentials consider removing but.
+                    self.keyring.as_mut().unwrap().delete_credential()?;
                     self.state = AppState::NeedsLogin;
                     self.event_tx
                         .send(AppEvent::NeedsLogin {
@@ -162,6 +165,11 @@ impl App {
                             username: String::new(),
                         })
                         .await?;
+                }
+                UiCmd::Exit => {
+                    self.client = None;
+                    self.state = AppState::Exited;
+                    break;
                 }
             }
         }
