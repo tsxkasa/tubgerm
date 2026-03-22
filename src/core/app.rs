@@ -107,8 +107,6 @@ impl App {
                     .await
                     .is_err()
                 {
-                    self.warn("Auto-login failed: could not reach server")
-                        .await?;
                     self.event_tx
                         .send(AppEvent::NeedsLogin {
                             server: config.credentials.server.clone(),
@@ -119,7 +117,6 @@ impl App {
                 }
             }
             Ok(None) => {
-                self.warn("No saved password found in keyring").await?;
                 self.event_tx
                     .send(AppEvent::NeedsLogin {
                         server: config.credentials.server.clone(),
@@ -188,11 +185,6 @@ impl App {
                             return Err(e);
                         }
                     }
-                }
-                if let Some(k) = &self.keyring
-                    && let Err(e) = k.set_password(password)
-                {
-                    self.warn(format!("Keyring save failed: {}", e)).await?;
                 }
 
                 self.config = Some(ConfigService::new()?);
