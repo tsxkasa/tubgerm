@@ -525,10 +525,10 @@ impl Default for PlaybarState {
 #[derive(Default, Debug)]
 pub struct MainView {
     pub focus: Focus,
-    pub left: LeftSideState,
-    pub main: MainPanelState,
-    pub right: RightPanelState,
-    pub playbar: PlaybarState,
+    pub left: Box<LeftSideState>,
+    pub main: Box<MainPanelState>,
+    pub right: Box<RightPanelState>,
+    pub playbar: Box<PlaybarState>,
 }
 
 impl MainView {
@@ -537,6 +537,12 @@ impl MainView {
             KeyCode::Char('j') => self.left.select_next(),
             KeyCode::Char('k') => self.left.select_prev(),
             KeyCode::Char('l') => {
+                if let Some(target) = self.left.selected_target() {
+                    self.focus = Focus::Main;
+                    self.navigate_main(target);
+                }
+            }
+            KeyCode::Enter => {
                 if let Some(target) = self.left.selected_target() {
                     self.focus = Focus::Main;
                     self.navigate_main(target);
@@ -580,9 +586,15 @@ impl MainView {
         match key.code {
             KeyCode::Char('[') => {
                 self.right.kind = self.right.kind.prev();
+                if self.right.kind == RightPanelKind::Related {
+                    self.right.related_state.select(Some(0));
+                }
             }
             KeyCode::Char(']') => {
                 self.right.kind = self.right.kind.next();
+                if self.right.kind == RightPanelKind::Related {
+                    self.right.related_state.select(Some(0));
+                }
             }
             KeyCode::Char('j') => match self.right.kind {
                 RightPanelKind::Queue => {
@@ -738,11 +750,6 @@ impl MainView {
         let title = self.main.content.panel_title().to_string();
         let inner = inset(area);
 
-        let padded = Rect {
-            height: area.height.saturating_sub(1),
-            ..area
-        };
-
         let sel = self.main.table_state.selected().unwrap_or(0);
         let total = self.main.content.len();
 
@@ -757,7 +764,7 @@ impl MainView {
 
         match &self.main.content {
             MainContent::Albums(albums) => {
-                let rows: Vec<Row> = albums
+                let mut rows: Vec<Row> = albums
                     .iter()
                     .map(|a| {
                         Row::new(vec![
@@ -768,6 +775,7 @@ impl MainView {
                         ])
                     })
                     .collect();
+                rows.push(Row::new(["", "", "", ""]));
                 let table = Table::new(
                     rows,
                     [
@@ -785,22 +793,23 @@ impl MainView {
                 .block(block_for(&title, focused))
                 .row_highlight_style(hl)
                 .highlight_symbol("► ");
-                frame.render_stateful_widget(table, padded, &mut self.main.table_state);
+                frame.render_stateful_widget(table, area, &mut self.main.table_state);
             }
             MainContent::Artists(artists) => {
-                let rows: Vec<Row> = artists
+                let mut rows: Vec<Row> = artists
                     .iter()
                     .map(|a| Row::new(vec![Cell::from(a.name), Cell::from(a.genre)]))
                     .collect();
+                rows.push(Row::new(["", "", "", ""]));
                 let table = Table::new(rows, [Constraint::Fill(2), Constraint::Fill(1)])
                     .header(Row::new(["Artist", "Genre"]).style(hdr).bottom_margin(1))
                     .block(block_for(&title, focused))
                     .row_highlight_style(hl)
                     .highlight_symbol("► ");
-                frame.render_stateful_widget(table, padded, &mut self.main.table_state);
+                frame.render_stateful_widget(table, area, &mut self.main.table_state);
             }
             MainContent::Playlists(playlists) => {
-                let rows: Vec<Row> = playlists
+                let mut rows: Vec<Row> = playlists
                     .iter()
                     .map(|p| {
                         Row::new(vec![
@@ -809,15 +818,16 @@ impl MainView {
                         ])
                     })
                     .collect();
+                rows.push(Row::new(["", "", "", ""]));
                 let table = Table::new(rows, [Constraint::Fill(1), Constraint::Length(8)])
                     .header(Row::new(["Name", "Tracks"]).style(hdr).bottom_margin(1))
                     .block(block_for(&title, focused))
                     .row_highlight_style(hl)
                     .highlight_symbol("► ");
-                frame.render_stateful_widget(table, padded, &mut self.main.table_state);
+                frame.render_stateful_widget(table, area, &mut self.main.table_state);
             }
             MainContent::Tracks { items, .. } => {
-                let rows: Vec<Row> = items
+                let mut rows: Vec<Row> = items
                     .iter()
                     .enumerate()
                     .map(|(i, t)| {
@@ -830,6 +840,7 @@ impl MainView {
                         ])
                     })
                     .collect();
+                rows.push(Row::new(["", "", "", ""]));
                 let table = Table::new(
                     rows,
                     [
@@ -848,7 +859,7 @@ impl MainView {
                 .block(block_for(&title, focused))
                 .row_highlight_style(hl)
                 .highlight_symbol("► ");
-                frame.render_stateful_widget(table, padded, &mut self.main.table_state);
+                frame.render_stateful_widget(table, area, &mut self.main.table_state);
             }
         }
 
@@ -1059,9 +1070,12 @@ impl MainView {
             .iter()
             .map(|t| {
                 ListItem::new(vec![
-                    Line::from(Span::styled(t.title, Style::default().fg(Color::White))),
                     Line::from(Span::styled(
-                        format!("  {}", t.artist),
+                        format!("  {}", t.title),
+                        Style::default().fg(Color::White),
+                    )),
+                    Line::from(Span::styled(
+                        format!("    {}", t.artist),
                         Style::default().fg(Color::DarkGray),
                     )),
                 ])
@@ -1074,7 +1088,7 @@ impl MainView {
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             )
-            .highlight_symbol("► ");
+            .highlight_symbol("►");
 
         frame.render_stateful_widget(list, sections[1], &mut self.right.related_state);
     }
