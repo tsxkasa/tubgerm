@@ -534,9 +534,9 @@ pub struct MainView {
 impl MainView {
     fn handle_left(&mut self, key: KeyEvent) -> Option<UiCmd> {
         match key.code {
-            KeyCode::Down => self.left.select_next(),
-            KeyCode::Up => self.left.select_prev(),
-            KeyCode::Enter => {
+            KeyCode::Char('j') => self.left.select_next(),
+            KeyCode::Char('k') => self.left.select_prev(),
+            KeyCode::Char('l') => {
                 if let Some(target) = self.left.selected_target() {
                     self.focus = Focus::Main;
                     self.navigate_main(target);
@@ -568,8 +568,8 @@ impl MainView {
 
     fn handle_main(&mut self, key: KeyEvent) -> Option<UiCmd> {
         match key.code {
-            KeyCode::Down => self.main.select_next(),
-            KeyCode::Up => self.main.select_prev(),
+            KeyCode::Char('j') => self.main.select_next(),
+            KeyCode::Char('k') => self.main.select_prev(),
             KeyCode::Enter => { /* hook up UiCmd::Play later */ }
             _ => {}
         }
@@ -584,7 +584,7 @@ impl MainView {
             KeyCode::Char(']') => {
                 self.right.kind = self.right.kind.next();
             }
-            KeyCode::Down => match self.right.kind {
+            KeyCode::Char('j') => match self.right.kind {
                 RightPanelKind::Queue => {
                     let max = self.right.queue.upcoming.len().saturating_sub(1);
                     let cur = self.right.queue.list_state.selected().unwrap_or(0);
@@ -603,7 +603,7 @@ impl MainView {
                     self.right.related_state.select(Some((cur + 1).min(max)));
                 }
             },
-            KeyCode::Up => match self.right.kind {
+            KeyCode::Char('k') => match self.right.kind {
                 RightPanelKind::Queue => {
                     let cur = self.right.queue.list_state.selected().unwrap_or(0);
                     self.right
@@ -1184,4 +1184,3 @@ fn inset(area: Rect) -> Rect {
         height: area.height.saturating_sub(2),
     }
 }
-
