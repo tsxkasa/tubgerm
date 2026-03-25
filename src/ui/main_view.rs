@@ -235,7 +235,7 @@ impl MainPanelState {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RightPanelState {
     pub kind: RightPanelKind,
     pub tab_offset: usize,
@@ -244,20 +244,6 @@ pub struct RightPanelState {
     pub lyrics_visible_height: u16,
     pub lyrics_timed: bool,
     pub related_state: ListState,
-}
-
-impl Default for RightPanelState {
-    fn default() -> Self {
-        Self {
-            kind: RightPanelKind::default(),
-            tab_offset: 0,
-            queue_list_state: ListState::default(),
-            lyrics_scroll: 0,
-            lyrics_visible_height: 0,
-            lyrics_timed: false,
-            related_state: ListState::default(),
-        }
-    }
 }
 
 #[derive(Default, Debug)]

@@ -14,12 +14,12 @@ pub enum AppEvent {
     NeedsLogin { server: String, username: String },
     LoginError(String),
     Ready,
-    PlaylistsLoaded(Vec<Playlist>),
-    PlaylistTracksLoaded(String, Vec<Child>), // (title, tracks)
-    AlbumsLoaded(Vec<AlbumId3>),
-    ArtistsLoaded(Vec<ArtistId3>),
-    AlbumTracksLoaded(String, Vec<Child>), // (album name, tracks)
-    NowPlaying(Child),
+    PlaylistsLoaded(Box<Vec<Playlist>>),
+    PlaylistTracksLoaded(String, Box<Vec<Child>>), // (title, tracks)
+    AlbumsLoaded(Box<Vec<ArtistId3>>),
+    ArtistsLoaded(Box<Vec<ArtistId3>>),
+    AlbumTracksLoaded(String, Box<Vec<Child>>), // (album name, tracks)
+    NowPlaying(Box<Child>),
     ProgressTick(f64),
     PlaybackStopped,
     Notify(String, NotifLevel),
