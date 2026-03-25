@@ -13,7 +13,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{
     core::event::{AppEvent, Event, NotifLevel, UiCmd},
-    ui::{login_form::LoginForm, main_view::MainView},
+    ui::{library::LibraryState, login_form::LoginForm, main_view::MainView},
 };
 
 #[derive(Default, Debug)]
@@ -29,6 +29,8 @@ pub enum UiState {
 pub struct Ui {
     state: UiState,
     pub spinner_tick: u8,
+
+    library: LibraryState,
     event_rx: Receiver<AppEvent>,
     command_tx: Sender<UiCmd>,
     notifications: Notifications,
@@ -39,6 +41,7 @@ impl Ui {
         Self {
             state: UiState::Loading,
             spinner_tick: 0,
+            library: LibraryState::default(),
             event_rx,
             command_tx,
             notifications: Notifications::default(),
@@ -65,7 +68,7 @@ impl Ui {
             }
             UiState::Main(form) => {
                 // TODO: PLACEHOLDER
-                form.render(frame);
+                form.render(frame, &self.library);
             }
             UiState::FatalError(msg) => {
                 frame.render_widget(
@@ -143,6 +146,7 @@ impl Ui {
                 self.notifications.add(notif)?;
             }
             AppEvent::Error(e) => self.state = UiState::FatalError(e),
+            _ => {}
         }
         Ok(())
     }
@@ -165,7 +169,7 @@ impl Ui {
                 }
             }
             UiState::Main(form) => {
-                if let Some(cmd) = form.handle_key(event) {
+                if let Some(cmd) = form.handle_key(event, &self.library) {
                     self.command_tx.send(cmd).await?;
                     self.state = UiState::Loading;
                 }

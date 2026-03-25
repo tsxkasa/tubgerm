@@ -170,6 +170,7 @@ impl App {
                     self.client = None;
                     self.state = AppState::Exited;
                 }
+                _ => {}
             }
         }
         Ok(())
