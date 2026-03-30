@@ -377,7 +377,20 @@ impl MainView {
         match key.code {
             KeyCode::Char('j') => self.main.select_next(lib),
             KeyCode::Char('k') => self.main.select_prev(),
-            KeyCode::Enter => {
+            KeyCode::Char('h') => {
+                return match &self.main.content {
+                    MainContent::Album(_) => {
+                        self.main.content = MainContent::Albums;
+                        None
+                    }
+                    MainContent::Playlist(_) => {
+                        self.main.content = MainContent::Playlists;
+                        None
+                    }
+                    _ => None,
+                };
+            }
+            KeyCode::Enter | KeyCode::Char('l') => {
                 let idx = self.main.table_state.selected().unwrap_or(0);
                 return match &self.main.content {
                     MainContent::Albums => {
@@ -478,9 +491,9 @@ impl MainView {
 
     fn handle_playbar(&self, key: KeyEvent, lib: &LibraryState) -> Option<UiCmd> {
         match key.code {
-            KeyCode::Char('-') => Some(UiCmd::SetVolume(lib.volume.saturating_sub(5))),
+            KeyCode::Char('-') => Some(UiCmd::SetVolume((lib.volume - 0.05).clamp(0.0, 100.0))),
             KeyCode::Char('+') | KeyCode::Char('=') => {
-                Some(UiCmd::SetVolume((lib.volume + 5).min(100)))
+                Some(UiCmd::SetVolume((lib.volume + 0.05).clamp(0.0, 100.0)))
             }
             KeyCode::Char('n') => Some(UiCmd::Next),
             KeyCode::Char('p') => Some(UiCmd::Prev),
@@ -1037,7 +1050,8 @@ impl MainView {
         );
 
         let vol_w = 10usize;
-        let vol_f = ((vol_w as f64) * lib.volume as f64 / 100.0) as usize;
+        // INFO: volume should be normalized in 0.0 - 1.0
+        let vol_f = ((vol_w as f64) * lib.volume) as usize;
         frame.render_widget(
             Paragraph::new(vec![Line::from(vec![
                 Span::styled("vol  ", Style::default().fg(Color::DarkGray)),

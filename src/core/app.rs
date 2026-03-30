@@ -4,7 +4,10 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{
     core::event::{AppEvent, NotifLevel, UiCmd},
-    services::{client::ClientService, config::config::ConfigService, keyring::KeyringService},
+    services::{
+        audio::PlaybackService, client::ClientService, config::config::ConfigService,
+        keyring::KeyringService,
+    },
 };
 
 #[derive(Default, Debug)]
@@ -16,7 +19,6 @@ enum AppState {
     Exited,
 }
 
-#[derive(Debug)]
 pub struct App {
     state: AppState,
     event_tx: Sender<AppEvent>,
@@ -25,6 +27,7 @@ pub struct App {
     config: Option<ConfigService>,
     client: Option<ClientService>,
     keyring: Option<KeyringService>,
+    playback: Option<PlaybackService>,
 }
 
 impl App {
@@ -36,6 +39,7 @@ impl App {
             config: None,
             client: None,
             keyring: None,
+            playback: None,
         };
 
         app.init().await?;
@@ -78,6 +82,7 @@ impl App {
     async fn init(&mut self) -> Result<()> {
         // init client first, important!!
         self.client = Some(ClientService::default());
+        self.playback = Some(PlaybackService::new()?);
 
         let config = ConfigService::load()?;
         if config.credentials.username.is_empty() || config.credentials.server.is_empty() {
@@ -220,7 +225,36 @@ impl App {
                             .await?;
                     }
                 }
-                _ => {}
+                UiCmd::PlayTrack(id) => {
+                    if let Some(cli) = &self.client {
+                        let song = cli
+                            .client()?
+                            .stream(&id, None, None::<String>, None, None::<String>, None, None)
+                            .await?;
+                        self.event_tx
+                            .send(AppEvent::NowPlaying(Box::new(
+                                cli.client()?.get_song(&id).await?,
+                            )))
+                            .await?;
+                        self.playback.as_ref().unwrap().play_new(song).await?;
+                    }
+                }
+                UiCmd::Pause => {
+                    self.playback.as_ref().unwrap().pause()?;
+                    self.event_tx.send(AppEvent::PlaybackStopped).await?;
+                }
+                UiCmd::Resume => {
+                    self.playback.as_ref().unwrap().play()?;
+                    self.event_tx.send(AppEvent::PlaybackResumed).await?;
+                }
+                UiCmd::Prev => {}
+                UiCmd::Next => {}
+                UiCmd::StopTrack => {
+                    self.playback.as_ref().unwrap().stop()?;
+                }
+                UiCmd::SetVolume(v) => {
+                    self.playback.as_ref().unwrap().set_vol(v)?;
+                }
             }
         }
         Ok(())

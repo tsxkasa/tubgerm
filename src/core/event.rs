@@ -22,6 +22,7 @@ pub enum AppEvent {
     NowPlaying(Box<Child>),
     ProgressTick(f64),
     PlaybackStopped,
+    PlaybackResumed,
     Notify(String, NotifLevel),
     Error(String),
 }
@@ -53,7 +54,7 @@ pub enum UiCmd {
     Prev,
     Pause,
     Resume,
-    SetVolume(u8),
+    SetVolume(f64),
     Logout,
     Exit,
 }

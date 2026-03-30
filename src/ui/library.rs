@@ -29,6 +29,6 @@ pub struct LibraryState {
     pub queue: Vec<Child>,
     pub related_tracks: Vec<Child>,
     pub progress: f64,
+    pub volume: f64,
     pub playing: bool,
-    pub volume: u8,
 }

@@ -155,17 +155,20 @@ impl Ui {
             AppEvent::AlbumsLoaded(a) => {
                 self.library.albums = Some(a);
             }
-            AppEvent::PlaybackStopped => {
-                self.library.playing = false;
-            }
             AppEvent::LikedSongsLoaded(s) => {
                 self.library.liked_songs = Some(s);
             }
             AppEvent::NowPlaying(p) => {
                 self.library.now_playing = Some(p);
             }
+            AppEvent::PlaybackStopped => {
+                self.library.playing = false;
+            }
+            AppEvent::PlaybackResumed => {
+                self.library.playing = true;
+            }
             AppEvent::ProgressTick(t) => {
-                self.library.progress = t;
+                self.library.progress += t;
             }
             AppEvent::PlaylistTracksLoaded(t) => {
                 self.library.playlist_cache.insert(t.base.id.clone(), *t);
