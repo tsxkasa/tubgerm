@@ -9,6 +9,7 @@ use ratatui::{
         ScrollbarOrientation, ScrollbarState, Table, TableState, Wrap,
     },
 };
+use submarine::data::Child;
 
 use crate::{core::event::UiCmd, ui::library::LibraryState};
 
@@ -83,7 +84,6 @@ impl RightPanelKind {
 pub enum SidebarTarget {
     LikedSongs,
     Albums,
-    Artists,
     Playlists,
     Playlist(usize),
 }
@@ -116,10 +116,6 @@ impl Default for LeftSideState {
                 target: SidebarTarget::Albums,
             },
             SidebarRow::Nav {
-                label: "Artists",
-                target: SidebarTarget::Artists,
-            },
-            SidebarRow::Nav {
                 label: "Playlists",
                 target: SidebarTarget::Playlists,
             },
@@ -143,13 +139,13 @@ impl LeftSideState {
         if idx < self.static_rows.len() {
             matches!(self.static_rows[idx], SidebarRow::Nav { .. })
         } else {
-            idx - self.static_rows.len() < lib.playlists.len()
+            idx - self.static_rows.len() < lib.playlists.as_ref().map(|v| v.len()).unwrap_or(0)
         }
     }
 
     fn select_next(&mut self, lib: &LibraryState) {
         let cur = self.selected_idx();
-        let total = self.static_rows.len() + lib.playlists.len();
+        let total = self.static_rows.len() + lib.playlists.as_ref().map(|v| v.len()).unwrap_or(0);
         if let Some(i) = ((cur + 1)..total).find(|&i| self.row_is_selectable(i, lib)) {
             self.list_state.select(Some(i));
         }
@@ -171,7 +167,8 @@ impl LeftSideState {
             }
         } else {
             let playlist_idx = idx - self.static_rows.len();
-            (playlist_idx < lib.playlists.len()).then_some(SidebarTarget::Playlist(playlist_idx))
+            (playlist_idx < lib.playlists.as_ref().map(|v| v.len()).unwrap_or(0))
+                .then_some(SidebarTarget::Playlist(playlist_idx))
         }
     }
 }
@@ -180,27 +177,55 @@ impl LeftSideState {
 pub enum MainContent {
     #[default]
     Albums,
-    Artists,
     Playlists,
-    Tracks,
+    LikedSongs,
+    Playlist(String),
+    Album(String),
 }
 
 impl MainContent {
-    fn panel_title<'a>(&self, lib: &'a LibraryState) -> &'a str {
+    pub fn panel_title<'a>(&self, lib: &'a LibraryState) -> &'a str {
         match self {
             MainContent::Albums => "Albums",
-            MainContent::Artists => "Artists",
             MainContent::Playlists => "Playlists",
-            MainContent::Tracks => lib.current_title.as_str(),
+            MainContent::LikedSongs => "Liked Songs",
+            MainContent::Playlist(id) => lib
+                .playlist_cache
+                .get(id)
+                .map(|p| p.base.name.as_str())
+                .unwrap_or("Playlist"),
+            MainContent::Album(id) => lib
+                .album_cache
+                .get(id)
+                .map(|a| a.base.name.as_str())
+                .unwrap_or("Album"),
         }
     }
 
-    fn len(&self, lib: &LibraryState) -> usize {
+    pub fn current_tracks<'a>(&self, lib: &'a LibraryState) -> &'a [Child] {
         match self {
-            MainContent::Albums => lib.albums.len(),
-            MainContent::Artists => lib.artists.len(),
-            MainContent::Playlists => lib.playlists.len(),
-            MainContent::Tracks => lib.current_tracks.len(),
+            MainContent::LikedSongs => lib.liked_songs.as_deref().unwrap_or(&[]),
+            MainContent::Playlist(id) => lib
+                .playlist_cache
+                .get(id)
+                .map(|p| p.entry.as_slice())
+                .unwrap_or(&[]),
+            MainContent::Album(id) => lib
+                .album_cache
+                .get(id)
+                .map(|a| a.song.as_slice())
+                .unwrap_or(&[]),
+            _ => &[],
+        }
+    }
+
+    pub fn len(&self, lib: &LibraryState) -> usize {
+        match self {
+            MainContent::Albums => lib.albums.as_ref().map(|v| v.len()).unwrap_or(0),
+            MainContent::Playlists => lib.playlists.as_ref().map(|v| v.len()).unwrap_or(0),
+            MainContent::LikedSongs | MainContent::Playlist(_) | MainContent::Album(_) => {
+                self.current_tracks(lib).len()
+            }
         }
     }
 }
@@ -315,26 +340,35 @@ impl MainView {
 
         match target {
             SidebarTarget::LikedSongs => {
-                self.main.content = MainContent::Tracks;
-                Some(UiCmd::FetchLikedSongs)
+                self.main.content = MainContent::LikedSongs;
+                match (&lib.liked_songs, &lib.liked_cache) {
+                    (Some(songs), cache) if !songs.is_empty() || !cache.is_empty() => None,
+                    _ => Some(UiCmd::FetchLikedSongs),
+                }
             }
             SidebarTarget::Albums => {
                 self.main.content = MainContent::Albums;
-                lib.albums.is_empty().then_some(UiCmd::FetchAlbums)
-            }
-            SidebarTarget::Artists => {
-                self.main.content = MainContent::Artists;
-                lib.artists.is_empty().then_some(UiCmd::FetchArtists)
+                match (&lib.albums, &lib.album_cache) {
+                    (Some(albums), cache) if !albums.is_empty() || !cache.is_empty() => None,
+                    _ => Some(UiCmd::FetchAlbums),
+                }
             }
             SidebarTarget::Playlists => {
                 self.main.content = MainContent::Playlists;
-                lib.artists.is_empty().then_some(UiCmd::FetchPlaylists)
+                None
             }
             SidebarTarget::Playlist(idx) => {
-                self.main.content = MainContent::Tracks;
-                lib.playlists
-                    .get(idx)
-                    .map(|p| UiCmd::FetchPlaylist(p.id.clone()))
+                if let Some(playlists) = &lib.playlists {
+                    if let Some(p) = playlists.get(idx) {
+                        let id = p.id.clone();
+                        self.main.content = MainContent::Playlist(id.clone());
+                        (!lib.playlist_cache.contains_key(&id)).then_some(UiCmd::FetchPlaylist(id))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
         }
     }
@@ -346,21 +380,40 @@ impl MainView {
             KeyCode::Enter => {
                 let idx = self.main.table_state.selected().unwrap_or(0);
                 return match &self.main.content {
-                    MainContent::Tracks => lib
-                        .current_tracks
-                        .get(idx)
-                        .map(|t| UiCmd::PlayTrack(t.id.clone())),
                     MainContent::Albums => {
-                        lib.albums.get(idx).map(|a| UiCmd::FetchAlbum(a.id.clone()))
+                        if let Some(a) = &lib.albums {
+                            let a = a.get(idx)?;
+                            let id = a.id.clone();
+                            self.main.content = MainContent::Album(id.clone());
+                            let mut ts = TableState::default();
+                            ts.select(Some(0));
+                            self.main.table_state = ts;
+                            (!lib.album_cache.contains_key(&id)).then_some(UiCmd::FetchAlbum(id))
+                        } else {
+                            None
+                        }
                     }
-                    MainContent::Artists => lib
-                        .artists
-                        .get(idx)
-                        .map(|a| UiCmd::FetchArtist(a.id.clone())),
-                    MainContent::Playlists => lib
-                        .playlists
-                        .get(idx)
-                        .map(|p| UiCmd::FetchPlaylist(p.id.clone())),
+                    MainContent::Playlists => {
+                        if let Some(p) = &lib.playlists {
+                            let p = p.get(idx)?;
+                            let id = p.id.clone();
+                            self.main.content = MainContent::Playlist(id.clone());
+                            let mut ts = TableState::default();
+                            ts.select(Some(0));
+                            self.main.table_state = ts;
+                            (!lib.playlist_cache.contains_key(&id))
+                                .then_some(UiCmd::FetchPlaylist(id))
+                        } else {
+                            None
+                        }
+                    }
+                    MainContent::LikedSongs | MainContent::Playlist(_) | MainContent::Album(_) => {
+                        self.main
+                            .content
+                            .current_tracks(lib)
+                            .get(idx)
+                            .map(|t| UiCmd::PlayTrack(t.id.clone()))
+                    }
                 };
             }
             _ => {}
@@ -447,9 +500,9 @@ impl MainView {
         let body = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(20),
+                Constraint::Percentage(15),
                 Constraint::Fill(1),
-                Constraint::Percentage(30),
+                Constraint::Percentage(20),
             ])
             .split(root[0]);
 
@@ -479,19 +532,21 @@ impl MainView {
             })
             .collect();
 
-        for p in &lib.playlists {
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("  {}", p.name),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    format!("  {}", p.song_count),
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::DIM),
-                ),
-            ])));
+        if let Some(playlists) = &lib.playlists {
+            for p in playlists.iter() {
+                items.push(ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("  {}", p.name),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(
+                        format!("  {}", p.song_count),
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::DIM),
+                    ),
+                ])));
+            }
         }
 
         let list = List::new(items)
@@ -523,18 +578,19 @@ impl MainView {
 
         match &self.main.content {
             MainContent::Albums => {
-                let mut rows: Vec<Row> = lib
-                    .albums
-                    .iter()
-                    .map(|a| {
-                        Row::new(vec![
-                            Cell::from(a.name.as_str()),
-                            Cell::from(a.artist.as_deref().unwrap_or("—")),
-                            Cell::from(a.year.map(|y| y.to_string()).unwrap_or_default()),
-                            Cell::from(format!("{}", a.song_count)),
-                        ])
-                    })
-                    .collect();
+                let mut rows = Vec::new();
+                if let Some(albums) = &lib.albums {
+                    rows = albums
+                        .iter()
+                        .map(|a| {
+                            Row::new(vec![
+                                Cell::from(a.name.as_str()),
+                                Cell::from(a.artist.as_deref().unwrap_or("—")),
+                                Cell::from(a.year.map(|y| y.to_string()).unwrap_or_default()),
+                            ])
+                        })
+                        .collect();
+                }
                 rows.push(Row::new([""; 4]));
                 let table = Table::new(
                     rows,
@@ -542,11 +598,10 @@ impl MainView {
                         Constraint::Fill(2),
                         Constraint::Fill(2),
                         Constraint::Length(6),
-                        Constraint::Length(9),
                     ],
                 )
                 .header(
-                    Row::new(["Title", "Artist", "Year", "Tracks"])
+                    Row::new(["Title", "Artist", "Year"])
                         .style(hdr)
                         .bottom_margin(1),
                 )
@@ -556,38 +611,20 @@ impl MainView {
                 frame.render_stateful_widget(table, area, &mut self.main.table_state);
             }
 
-            MainContent::Artists => {
-                let mut rows: Vec<Row> = lib
-                    .artists
-                    .iter()
-                    .map(|a| {
-                        Row::new(vec![
-                            Cell::from(a.name.as_str()),
-                            Cell::from(format!("{} albums", a.album_count)),
-                        ])
-                    })
-                    .collect();
-                rows.push(Row::new([""; 2]));
-                let table = Table::new(rows, [Constraint::Fill(2), Constraint::Length(10)])
-                    .header(Row::new(["Artist", "Albums"]).style(hdr).bottom_margin(1))
-                    .block(block_for(&title, focused))
-                    .row_highlight_style(hl)
-                    .highlight_symbol("► ");
-                frame.render_stateful_widget(table, area, &mut self.main.table_state);
-            }
-
             MainContent::Playlists => {
-                let mut rows: Vec<Row> = lib
-                    .playlists
-                    .iter()
-                    .map(|p| {
-                        Row::new(vec![
-                            Cell::from(p.name.as_str()),
-                            Cell::from(p.song_count.to_string()),
-                            Cell::from(fmt_duration_i32(p.duration)),
-                        ])
-                    })
-                    .collect();
+                let mut rows = Vec::new();
+                if let Some(playlists) = &lib.playlists {
+                    rows = playlists
+                        .iter()
+                        .map(|p| {
+                            Row::new(vec![
+                                Cell::from(p.name.as_str()),
+                                Cell::from(p.song_count.to_string()),
+                                Cell::from(fmt_duration_i32(p.duration)),
+                            ])
+                        })
+                        .collect();
+                }
                 rows.push(Row::new([""; 3]));
                 let table = Table::new(
                     rows,
@@ -608,9 +645,11 @@ impl MainView {
                 frame.render_stateful_widget(table, area, &mut self.main.table_state);
             }
 
-            MainContent::Tracks => {
-                let mut rows: Vec<Row> = lib
-                    .current_tracks
+            MainContent::LikedSongs | MainContent::Playlist(_) | MainContent::Album(_) => {
+                let mut rows: Vec<Row> = self
+                    .main
+                    .content
+                    .current_tracks(lib)
                     .iter()
                     .enumerate()
                     .map(|(i, t)| {
@@ -750,7 +789,7 @@ impl MainView {
             .split(area);
 
         {
-            let content = if let Some(np) = &lib.now_playing {
+            let content = if let Some(np) = lib.now_playing.as_ref() {
                 vec![
                     Line::from(Span::styled(
                         "Now Playing",
@@ -876,11 +915,10 @@ impl MainView {
             .split(area);
 
         {
-            let title = lib
-                .now_playing
-                .as_ref()
-                .map(|t| t.title.as_str())
-                .unwrap_or("—");
+            let title = match lib.now_playing.as_ref() {
+                Some(t) => t.title.as_str(),
+                None => "—",
+            };
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::from(Span::styled(
@@ -937,7 +975,7 @@ impl MainView {
             ])
             .split(inner);
 
-        if let Some(t) = &lib.now_playing {
+        if let Some(t) = lib.now_playing.as_ref() {
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::from(Span::styled(
@@ -962,20 +1000,20 @@ impl MainView {
         let play = if lib.playing { "⏸" } else { "▶" };
         let bar_w = cols[1].width.saturating_sub(17) as usize;
         let filled = ((bar_w as f64) * lib.progress) as usize;
-        let elapsed = lib
-            .now_playing
-            .as_ref()
-            .and_then(|t| t.duration)
-            .map(|s| {
-                let e = (s as f64 * lib.progress) as i32;
-                format!("{}:{:02}", e / 60, e % 60)
-            })
-            .unwrap_or_else(|| "--:--".to_string());
-        let total_str = lib
-            .now_playing
-            .as_ref()
-            .map(|t| fmt_duration(t.duration))
-            .unwrap_or_else(|| "--:--".to_string());
+        let elapsed = match lib.now_playing.as_ref() {
+            Some(t) => match t.duration {
+                Some(s) => {
+                    let e = (s as f64 * lib.progress) as i32;
+                    format!("{}:{:02}", e / 60, e % 60)
+                }
+                None => "--:--".to_string(),
+            },
+            None => "--:--".to_string(),
+        };
+        let total_str = match lib.now_playing.as_ref() {
+            Some(t) => fmt_duration(t.duration),
+            None => "--:--".to_string(),
+        };
 
         frame.render_widget(
             Paragraph::new(vec![

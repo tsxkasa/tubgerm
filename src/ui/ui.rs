@@ -121,7 +121,10 @@ impl Ui {
                     });
                 }
             }
-            AppEvent::Ready => self.state = UiState::Main(MainView::default()),
+            AppEvent::Ready => {
+                self.state = UiState::Main(MainView::default());
+                let _ = self.command_tx.try_send(UiCmd::FetchPlaylists);
+            }
             AppEvent::Notify(m, k) => {
                 let notif = Notification::new(m);
 
@@ -146,7 +149,30 @@ impl Ui {
                 self.notifications.add(notif)?;
             }
             AppEvent::Error(e) => self.state = UiState::FatalError(e),
-            _ => {}
+            AppEvent::PlaylistsLoaded(p) => {
+                self.library.playlists = Some(p);
+            }
+            AppEvent::AlbumsLoaded(a) => {
+                self.library.albums = Some(a);
+            }
+            AppEvent::PlaybackStopped => {
+                self.library.playing = false;
+            }
+            AppEvent::LikedSongsLoaded(s) => {
+                self.library.liked_songs = Some(s);
+            }
+            AppEvent::NowPlaying(p) => {
+                self.library.now_playing = Some(p);
+            }
+            AppEvent::ProgressTick(t) => {
+                self.library.progress = t;
+            }
+            AppEvent::PlaylistTracksLoaded(t) => {
+                self.library.playlist_cache.insert(t.base.id.clone(), *t);
+            }
+            AppEvent::AlbumTracksLoaded(t) => {
+                self.library.album_cache.insert(t.base.id.clone(), *t);
+            }
         }
         Ok(())
     }
@@ -169,9 +195,12 @@ impl Ui {
                 }
             }
             UiState::Main(form) => {
+                if self.library.playlists.is_none() {
+                    self.command_tx.send(UiCmd::FetchPlaylists).await?;
+                }
                 if let Some(cmd) = form.handle_key(event, &self.library) {
                     self.command_tx.send(cmd).await?;
-                    self.state = UiState::Loading;
+                    // self.state = UiState::Loading;
                 }
             }
             UiState::FatalError(_) => {

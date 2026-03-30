@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use submarine::api::get_album_list::Order;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{
@@ -169,6 +170,55 @@ impl App {
                 UiCmd::Exit => {
                     self.client = None;
                     self.state = AppState::Exited;
+                }
+                UiCmd::FetchPlaylists => {
+                    if let Some(cli) = &self.client {
+                        let playlist = cli
+                            .client()?
+                            .get_playlists(Some(cli.current_user()?))
+                            .await?;
+                        self.event_tx
+                            .send(AppEvent::PlaylistsLoaded(playlist))
+                            .await?;
+                    }
+                }
+                UiCmd::FetchPlaylist(id) => {
+                    if let Some(cli) = &self.client {
+                        let tracks = cli.client()?.get_playlist(id).await?;
+                        self.event_tx
+                            .send(AppEvent::PlaylistTracksLoaded(Box::new(tracks)))
+                            .await?;
+                    }
+                }
+                UiCmd::FetchAlbums => {
+                    if let Some(cli) = &self.client {
+                        let albums = cli
+                            .client()?
+                            .get_album_list2(
+                                Order::AlphabeticalByName,
+                                Some(i16::MAX as usize),
+                                None,
+                                None::<String>,
+                            )
+                            .await?;
+                        self.event_tx.send(AppEvent::AlbumsLoaded(albums)).await?;
+                    }
+                }
+                UiCmd::FetchAlbum(id) => {
+                    if let Some(cli) = &self.client {
+                        let tracks = cli.client()?.get_album(id).await?;
+                        self.event_tx
+                            .send(AppEvent::AlbumTracksLoaded(Box::new(tracks)))
+                            .await?;
+                    }
+                }
+                UiCmd::FetchLikedSongs => {
+                    if let Some(cli) = &self.client {
+                        let tracks = cli.client()?.get_starred2(None::<String>).await?;
+                        self.event_tx
+                            .send(AppEvent::LikedSongsLoaded(tracks.song))
+                            .await?;
+                    }
                 }
                 _ => {}
             }

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use submarine::data::{AlbumId3, ArtistId3, Child, Playlist};
+use submarine::data::{AlbumId3, AlbumWithSongsId3, Child, Playlist, PlaylistWithSongs};
 
 #[derive(Debug)]
 pub enum Event {
@@ -14,11 +14,11 @@ pub enum AppEvent {
     NeedsLogin { server: String, username: String },
     LoginError(String),
     Ready,
-    PlaylistsLoaded(Box<Vec<Playlist>>),
-    PlaylistTracksLoaded(String, Box<Vec<Child>>), // (title, tracks)
-    AlbumsLoaded(Box<Vec<ArtistId3>>),
-    ArtistsLoaded(Box<Vec<ArtistId3>>),
-    AlbumTracksLoaded(String, Box<Vec<Child>>), // (album name, tracks)
+    PlaylistsLoaded(Vec<Playlist>),
+    PlaylistTracksLoaded(Box<PlaylistWithSongs>),
+    AlbumsLoaded(Vec<Child>),
+    AlbumTracksLoaded(Box<AlbumWithSongsId3>),
+    LikedSongsLoaded(Vec<Child>),
     NowPlaying(Box<Child>),
     ProgressTick(f64),
     PlaybackStopped,
@@ -48,8 +48,6 @@ pub enum UiCmd {
     FetchPlaylist(String),
     FetchAlbums,
     FetchAlbum(String),
-    FetchArtists,
-    FetchArtist(String),
     FetchLikedSongs,
     Next,
     Prev,
