@@ -97,17 +97,21 @@ impl App {
         let tx = self.event_tx.clone();
         tokio::spawn(async move {
             loop {
-                let p = playback.lock().await;
-                if p.is_playing()
-                    && let Some(pos) = p.position()
+                // inner scope to drop lock before waiting 250ms so UI is more responsive
                 {
-                    let _ = tx
-                        .send(AppEvent::ProgressNow(SongTime {
-                            current: pos,
-                            end: p.get_end(),
-                        }))
-                        .await;
-                }
+                    let p = playback.lock().await;
+                    if p.is_playing()
+                        && let Some(pos) = p.position()
+                    {
+                        let _ = tx
+                            .send(AppEvent::ProgressNow(SongTime {
+                                current: pos,
+                                end: p.get_end(),
+                            }))
+                            .await;
+                    }
+                } // lock drops
+
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
         });
