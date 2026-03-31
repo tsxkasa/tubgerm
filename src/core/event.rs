@@ -9,6 +9,12 @@ pub enum Event {
     Tick(Duration),
 }
 
+#[derive(Default, Debug)]
+pub struct SongTime {
+    pub current: f64,
+    pub end: f64,
+}
+
 #[derive(Debug)]
 pub enum AppEvent {
     NeedsLogin { server: String, username: String },
@@ -20,7 +26,7 @@ pub enum AppEvent {
     AlbumTracksLoaded(Box<AlbumWithSongsId3>),
     LikedSongsLoaded(Vec<Child>),
     NowPlaying(Box<Child>),
-    ProgressTick(f64),
+    ProgressNow(SongTime), // progress 0.0 to 1.0 out of the entire song
     PlaybackStopped,
     PlaybackResumed,
     Notify(String, NotifLevel),

@@ -167,8 +167,8 @@ impl Ui {
             AppEvent::PlaybackResumed => {
                 self.library.playing = true;
             }
-            AppEvent::ProgressTick(t) => {
-                self.library.progress += t;
+            AppEvent::ProgressNow(t) => {
+                self.library.progress = t;
             }
             AppEvent::PlaylistTracksLoaded(t) => {
                 self.library.playlist_cache.insert(t.base.id.clone(), *t);

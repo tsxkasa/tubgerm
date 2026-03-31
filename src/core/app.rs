@@ -1,9 +1,14 @@
+use std::sync::Arc;
+
 use color_eyre::eyre::Result;
 use submarine::api::get_album_list::Order;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{
+    Mutex,
+    mpsc::{Receiver, Sender},
+};
 
 use crate::{
-    core::event::{AppEvent, NotifLevel, UiCmd},
+    core::event::{AppEvent, NotifLevel, SongTime, UiCmd},
     services::{
         audio::PlaybackService, client::ClientService, config::config::ConfigService,
         keyring::KeyringService,
@@ -27,7 +32,7 @@ pub struct App {
     config: Option<ConfigService>,
     client: Option<ClientService>,
     keyring: Option<KeyringService>,
-    playback: Option<PlaybackService>,
+    playback: Option<Arc<Mutex<PlaybackService>>>,
 }
 
 impl App {
@@ -80,9 +85,28 @@ impl App {
     }
 
     async fn init(&mut self) -> Result<()> {
-        // init client first, important!!
         self.client = Some(ClientService::default());
-        self.playback = Some(PlaybackService::new()?);
+        self.playback = Some(Arc::new(Mutex::new(PlaybackService::new()?)));
+
+        // loop send ProgressTick
+        let playback = self.playback.as_ref().unwrap().clone();
+        let tx = self.event_tx.clone();
+        tokio::spawn(async move {
+            loop {
+                let p = playback.lock().await;
+                if p.is_playing()
+                    && let Some(pos) = p.position()
+                {
+                    let _ = tx
+                        .send(AppEvent::ProgressNow(SongTime {
+                            current: pos,
+                            end: p.get_end(),
+                        }))
+                        .await;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+        });
 
         let config = ConfigService::load()?;
         if config.credentials.username.is_empty() || config.credentials.server.is_empty() {
@@ -236,24 +260,39 @@ impl App {
                                 cli.client()?.get_song(&id).await?,
                             )))
                             .await?;
-                        self.playback.as_ref().unwrap().play_new(song).await?;
+                        if let Some(playback) = &self.playback {
+                            playback.lock().await.play_new(song).await?;
+                        }
+                        self.event_tx.send(AppEvent::PlaybackResumed).await?;
                     }
                 }
                 UiCmd::Pause => {
-                    self.playback.as_ref().unwrap().pause()?;
+                    if let Some(playback) = &self.playback {
+                        let playback = playback.lock().await;
+                        playback.pause()?;
+                    }
                     self.event_tx.send(AppEvent::PlaybackStopped).await?;
                 }
                 UiCmd::Resume => {
-                    self.playback.as_ref().unwrap().play()?;
+                    if let Some(playback) = &self.playback {
+                        let playback = playback.lock().await;
+                        playback.play()?;
+                    }
                     self.event_tx.send(AppEvent::PlaybackResumed).await?;
                 }
                 UiCmd::Prev => {}
                 UiCmd::Next => {}
                 UiCmd::StopTrack => {
-                    self.playback.as_ref().unwrap().stop()?;
+                    if let Some(playback) = &self.playback {
+                        let playback = playback.lock().await;
+                        playback.stop()?;
+                    }
                 }
                 UiCmd::SetVolume(v) => {
-                    self.playback.as_ref().unwrap().set_vol(v)?;
+                    if let Some(playback) = &self.playback {
+                        let playback = playback.lock().await;
+                        playback.set_vol(v)?;
+                    }
                 }
             }
         }

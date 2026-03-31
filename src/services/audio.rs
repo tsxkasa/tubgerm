@@ -1,22 +1,29 @@
 use color_eyre::Result;
+use rodio::{MixerDeviceSink, Source};
 use std::io::Cursor;
 
 pub struct PlaybackService {
-    sink: rodio::MixerDeviceSink,
+    _sink: MixerDeviceSink,
     player: rodio::Player,
+    total_duration: f64,
 }
 
 impl PlaybackService {
     pub fn new() -> Result<PlaybackService> {
-        let sink = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
-        let player = rodio::Player::connect_new(sink.mixer());
-        Ok(PlaybackService { sink, player })
+        let _sink = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
+        let player = rodio::Player::connect_new(_sink.mixer());
+        Ok(PlaybackService {
+            _sink,
+            player,
+            total_duration: 0.0,
+        })
     }
 
-    pub async fn play_new(&self, song: Vec<u8>) -> Result<()> {
+    pub async fn play_new(&mut self, song: Vec<u8>) -> Result<()> {
         self.player.stop();
         let cursor = Cursor::new(song);
         let song = rodio::Decoder::new(cursor)?;
+        self.total_duration = song.total_duration().unwrap().as_secs_f64();
         self.player.append(song);
         Ok(())
     }
@@ -29,6 +36,21 @@ impl PlaybackService {
     pub fn play(&self) -> Result<()> {
         self.player.play();
         Ok(())
+    }
+
+    pub fn is_playing(&self) -> bool {
+        !self.player.is_paused()
+    }
+
+    pub fn position(&self) -> Option<f64> {
+        if self.player.len() == 0 {
+            return None;
+        }
+        Some(self.player.get_pos().as_secs_f64())
+    }
+
+    pub fn get_end(&self) -> f64 {
+        self.total_duration
     }
 
     pub fn stop(&self) -> Result<()> {

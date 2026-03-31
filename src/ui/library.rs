@@ -5,6 +5,8 @@ use submarine::data::{
     PlaylistWithSongs,
 };
 
+use crate::core::event::SongTime;
+
 #[derive(Default, Debug)]
 pub enum MainView {
     #[default]
@@ -28,7 +30,7 @@ pub struct LibraryState {
     pub now_playing: Option<Box<Child>>,
     pub queue: Vec<Child>,
     pub related_tracks: Vec<Child>,
-    pub progress: f64,
+    pub progress: SongTime,
     pub volume: f64,
     pub playing: bool,
 }

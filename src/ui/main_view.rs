@@ -491,9 +491,9 @@ impl MainView {
 
     fn handle_playbar(&self, key: KeyEvent, lib: &LibraryState) -> Option<UiCmd> {
         match key.code {
-            KeyCode::Char('-') => Some(UiCmd::SetVolume((lib.volume - 0.05).clamp(0.0, 100.0))),
+            KeyCode::Char('-') => Some(UiCmd::SetVolume((lib.volume - 0.05).clamp(0.0, 1.0))),
             KeyCode::Char('+') | KeyCode::Char('=') => {
-                Some(UiCmd::SetVolume((lib.volume + 0.05).clamp(0.0, 100.0)))
+                Some(UiCmd::SetVolume((lib.volume + 0.05).clamp(0.0, 1.0)))
             }
             KeyCode::Char('n') => Some(UiCmd::Next),
             KeyCode::Char('p') => Some(UiCmd::Prev),
@@ -1012,11 +1012,16 @@ impl MainView {
 
         let play = if lib.playing { "⏸" } else { "▶" };
         let bar_w = cols[1].width.saturating_sub(17) as usize;
-        let filled = ((bar_w as f64) * lib.progress) as usize;
+        let progress = if lib.progress.end > 0.0 {
+            lib.progress.current / lib.progress.end
+        } else {
+            0.0
+        };
+        let filled = ((bar_w as f64) * progress) as usize;
         let elapsed = match lib.now_playing.as_ref() {
             Some(t) => match t.duration {
                 Some(s) => {
-                    let e = (s as f64 * lib.progress) as i32;
+                    let e = (s as f64 * progress) as i32;
                     format!("{}:{:02}", e / 60, e % 60)
                 }
                 None => "--:--".to_string(),
