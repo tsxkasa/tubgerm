@@ -54,33 +54,37 @@ impl App {
 
     #[allow(unused)]
     async fn warn(&self, msg: impl Into<String>) -> Result<()> {
-        self.event_tx
+        let _ = self
+            .event_tx
             .send(AppEvent::Notify(msg.into(), NotifLevel::Warning))
-            .await?;
+            .await;
         Ok(())
     }
 
     #[allow(unused)]
     async fn error(&self, msg: impl Into<String>) -> Result<()> {
-        self.event_tx
+        let _ = self
+            .event_tx
             .send(AppEvent::Notify(msg.into(), NotifLevel::Error))
-            .await?;
+            .await;
         Ok(())
     }
 
     #[allow(unused)]
     async fn info(&self, msg: impl Into<String>) -> Result<()> {
-        self.event_tx
+        let _ = self
+            .event_tx
             .send(AppEvent::Notify(msg.into(), NotifLevel::Info))
-            .await?;
+            .await;
         Ok(())
     }
 
     #[allow(unused)]
     async fn debug(&self, msg: impl Into<String>) -> Result<()> {
-        self.event_tx
+        let _ = self
+            .event_tx
             .send(AppEvent::Notify(msg.into(), NotifLevel::Debug))
-            .await?;
+            .await;
         Ok(())
     }
 
@@ -110,12 +114,13 @@ impl App {
 
         let config = ConfigService::load()?;
         if config.credentials.username.is_empty() || config.credentials.server.is_empty() {
-            self.event_tx
+            let _ = self
+                .event_tx
                 .send(AppEvent::NeedsLogin {
                     server: String::new(),
                     username: String::new(),
                 })
-                .await?;
+                .await;
             self.state = AppState::NeedsLogin;
             return Ok(());
         }
@@ -139,28 +144,30 @@ impl App {
                 {
                     self.warn("Auto-login failed: could not reach server")
                         .await?;
-                    self.event_tx
+                    let _ = self
+                        .event_tx
                         .send(AppEvent::NeedsLogin {
                             server: config.credentials.server.clone(),
                             username: config.credentials.username.clone(),
                         })
-                        .await?;
+                        .await;
                     self.state = AppState::NeedsLogin;
                 }
             }
             Ok(None) => {
                 self.warn("No saved password found in keyring").await?;
-                self.event_tx
+                let _ = self
+                    .event_tx
                     .send(AppEvent::NeedsLogin {
                         server: config.credentials.server.clone(),
                         username: config.credentials.username.clone(),
                     })
-                    .await?;
+                    .await;
                 self.state = AppState::NeedsLogin;
             }
             Err(e) => {
                 // INFO: maybe have to fix this later, idk if i want app breaking err
-                self.event_tx.send(AppEvent::Error(e.to_string())).await?;
+                let _ = self.event_tx.send(AppEvent::Error(e.to_string())).await;
             }
         }
         Ok(())
@@ -176,12 +183,13 @@ impl App {
                 } => {
                     if let Err(e) = self.try_login(&url, &uname, &password).await {
                         self.error(format!("Could not login: {}", e)).await?;
-                        self.event_tx
+                        let _ = self
+                            .event_tx
                             .send(AppEvent::NeedsLogin {
                                 server: url,
                                 username: uname,
                             })
-                            .await?;
+                            .await;
                     }
                 }
                 UiCmd::Logout => {
@@ -189,12 +197,13 @@ impl App {
                     // WARN: deletes user credentials consider removing but.
                     self.keyring.as_mut().unwrap().delete_credential()?;
                     self.state = AppState::NeedsLogin;
-                    self.event_tx
+                    let _ = self
+                        .event_tx
                         .send(AppEvent::NeedsLogin {
                             server: String::new(),
                             username: String::new(),
                         })
-                        .await?;
+                        .await;
                 }
                 UiCmd::Exit => {
                     self.client = None;
@@ -206,17 +215,19 @@ impl App {
                             .client()?
                             .get_playlists(Some(cli.current_user()?))
                             .await?;
-                        self.event_tx
+                        let _ = self
+                            .event_tx
                             .send(AppEvent::PlaylistsLoaded(playlist))
-                            .await?;
+                            .await;
                     }
                 }
                 UiCmd::FetchPlaylist(id) => {
                     if let Some(cli) = &self.client {
                         let tracks = cli.client()?.get_playlist(id).await?;
-                        self.event_tx
+                        let _ = self
+                            .event_tx
                             .send(AppEvent::PlaylistTracksLoaded(Box::new(tracks)))
-                            .await?;
+                            .await;
                     }
                 }
                 UiCmd::FetchAlbums => {
@@ -230,23 +241,25 @@ impl App {
                                 None::<String>,
                             )
                             .await?;
-                        self.event_tx.send(AppEvent::AlbumsLoaded(albums)).await?;
+                        let _ = self.event_tx.send(AppEvent::AlbumsLoaded(albums)).await;
                     }
                 }
                 UiCmd::FetchAlbum(id) => {
                     if let Some(cli) = &self.client {
                         let tracks = cli.client()?.get_album(id).await?;
-                        self.event_tx
+                        let _ = self
+                            .event_tx
                             .send(AppEvent::AlbumTracksLoaded(Box::new(tracks)))
-                            .await?;
+                            .await;
                     }
                 }
                 UiCmd::FetchLikedSongs => {
                     if let Some(cli) = &self.client {
                         let tracks = cli.client()?.get_starred2(None::<String>).await?;
-                        self.event_tx
+                        let _ = self
+                            .event_tx
                             .send(AppEvent::LikedSongsLoaded(tracks.song))
-                            .await?;
+                            .await;
                     }
                 }
                 UiCmd::PlayTrack(id) => {
@@ -255,15 +268,16 @@ impl App {
                             .client()?
                             .stream(&id, None, None::<String>, None, None::<String>, None, None)
                             .await?;
-                        self.event_tx
+                        let _ = self
+                            .event_tx
                             .send(AppEvent::NowPlaying(Box::new(
                                 cli.client()?.get_song(&id).await?,
                             )))
-                            .await?;
+                            .await;
                         if let Some(playback) = &self.playback {
                             playback.lock().await.play_new(song).await?;
                         }
-                        self.event_tx.send(AppEvent::PlaybackResumed).await?;
+                        let _ = self.event_tx.send(AppEvent::PlaybackResumed).await;
                     }
                 }
                 UiCmd::Pause => {
@@ -271,28 +285,29 @@ impl App {
                         let playback = playback.lock().await;
                         playback.pause()?;
                     }
-                    self.event_tx.send(AppEvent::PlaybackStopped).await?;
+                    let _ = self.event_tx.send(AppEvent::PlaybackStopped).await;
                 }
                 UiCmd::Resume => {
                     if let Some(playback) = &self.playback {
                         let playback = playback.lock().await;
                         playback.play()?;
                     }
-                    self.event_tx.send(AppEvent::PlaybackResumed).await?;
+                    let _ = self.event_tx.send(AppEvent::PlaybackResumed).await;
                 }
                 UiCmd::Prev => {}
                 UiCmd::Next => {}
                 UiCmd::StopTrack => {
                     if let Some(playback) = &self.playback {
                         let playback = playback.lock().await;
-                        playback.stop()?;
+                        let _ = playback.stop();
                     }
                 }
                 UiCmd::SetVolume(v) => {
                     if let Some(playback) = &self.playback {
                         let playback = playback.lock().await;
-                        playback.set_vol(v)?;
+                        let _ = playback.set_vol(v);
                     }
+                    let _ = self.event_tx.send(AppEvent::VolumeChanged(v)).await;
                 }
             }
         }
@@ -329,12 +344,13 @@ impl App {
                 }
                 self.client = Some(client_svc);
                 self.state = AppState::LoggedIn;
-                self.event_tx.send(AppEvent::Ready).await?;
+                let _ = self.event_tx.send(AppEvent::Ready).await;
             }
             Err(e) => {
-                self.event_tx
+                let _ = self
+                    .event_tx
                     .send(AppEvent::LoginError(e.to_string()))
-                    .await?;
+                    .await;
             }
         }
         Ok(())

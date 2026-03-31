@@ -26,6 +26,7 @@ pub enum AppEvent {
     AlbumTracksLoaded(Box<AlbumWithSongsId3>),
     LikedSongsLoaded(Vec<Child>),
     NowPlaying(Box<Child>),
+    VolumeChanged(f64),
     ProgressNow(SongTime), // progress 0.0 to 1.0 out of the entire song
     PlaybackStopped,
     PlaybackResumed,

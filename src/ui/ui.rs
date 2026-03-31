@@ -170,6 +170,9 @@ impl Ui {
             AppEvent::ProgressNow(t) => {
                 self.library.progress = t;
             }
+            AppEvent::VolumeChanged(v) => {
+                self.library.volume = v;
+            }
             AppEvent::PlaylistTracksLoaded(t) => {
                 self.library.playlist_cache.insert(t.base.id.clone(), *t);
             }

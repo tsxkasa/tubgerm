@@ -23,7 +23,10 @@ impl PlaybackService {
         self.player.stop();
         let cursor = Cursor::new(song);
         let song = rodio::Decoder::new(cursor)?;
-        self.total_duration = song.total_duration().unwrap().as_secs_f64();
+        self.total_duration = song
+            .total_duration()
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
         self.player.append(song);
         Ok(())
     }
