@@ -274,7 +274,7 @@ impl App {
                             .await?;
                         let track_child = Some(Box::new(cli.client()?.get_song(&id).await?));
                         if let Some(playback) = &self.playback {
-                            playback.lock().await.play_new(song).await?;
+                            let _ = playback.lock().await.play_new(song).await;
                         }
 
                         let mut queue = match from {
@@ -321,14 +321,14 @@ impl App {
                 UiCmd::Pause => {
                     if let Some(playback) = &self.playback {
                         let playback = playback.lock().await;
-                        playback.pause()?;
+                        let _ = playback.pause();
                     }
                     self.library.send_modify(|d| d.playing = false);
                 }
                 UiCmd::Resume => {
                     if let Some(playback) = &self.playback {
                         let playback = playback.lock().await;
-                        playback.play()?;
+                        let _ = playback.play();
                     }
                     self.library.send_modify(|d| d.playing = true);
                 }
@@ -361,7 +361,7 @@ impl App {
                             let track_child =
                                 Some(Box::new(cli.client()?.get_song(&song_id).await?));
                             if let Some(playback) = &self.playback {
-                                playback.lock().await.play_new(raw_song).await?;
+                                let _ = playback.lock().await.play_new(raw_song).await;
                             }
                             self.library.send_modify(|d| {
                                 d.now_playing = track_child;
@@ -396,7 +396,7 @@ impl App {
                             let track_child =
                                 Some(Box::new(cli.client()?.get_song(&song_id).await?));
                             if let Some(playback) = &self.playback {
-                                playback.lock().await.play_new(raw_song).await?;
+                                let _ = playback.lock().await.play_new(raw_song).await;
                             }
                             self.library.send_modify(|d| {
                                 d.now_playing = track_child;

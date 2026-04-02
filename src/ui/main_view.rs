@@ -601,7 +601,7 @@ impl MainView {
             .block(block_for("Library", focused))
             .highlight_style(
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("►");
@@ -618,7 +618,7 @@ impl MainView {
         let visible_rows = inner.height.saturating_sub(2) as usize;
 
         let hl = Style::default()
-            .fg(Color::Green)
+            .fg(Color::Magenta)
             .add_modifier(Modifier::BOLD);
         let hdr = Style::default()
             .fg(Color::DarkGray)
@@ -787,7 +787,7 @@ impl MainView {
                 Span::styled(
                     kind.label(),
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(Color::Magenta)
                         .add_modifier(Modifier::BOLD),
                 )
             } else {
@@ -858,7 +858,7 @@ impl MainView {
                     )),
                     Line::from(Span::styled(
                         fmt_duration(np.duration),
-                        Style::default().fg(Color::Green),
+                        Style::default().fg(Color::Magenta),
                     )),
                 ]
             } else {
@@ -1000,7 +1000,7 @@ impl MainView {
         let list = List::new(items)
             .highlight_style(
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("►");
@@ -1080,7 +1080,7 @@ impl MainView {
                         "─".repeat(bar_w.saturating_sub(filled)),
                         total_str
                     ),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(Color::Magenta),
                 )),
             ])
             .alignment(Alignment::Center),
@@ -1099,7 +1099,7 @@ impl MainView {
                         "█".repeat(vol_f),
                         "─".repeat(vol_w - vol_f.min(vol_w))
                     ),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(Color::Magenta),
                 ),
             ])])
             .alignment(Alignment::Right),
@@ -1115,7 +1115,7 @@ fn block_for(title: &str, focused: bool) -> Block<'_> {
         .title(Span::styled(
             format!(" {} ", title),
             Style::default().fg(if focused {
-                Color::Green
+                Color::Magenta
             } else {
                 Color::DarkGray
             }),
@@ -1124,7 +1124,7 @@ fn block_for(title: &str, focused: bool) -> Block<'_> {
 
 fn border_style(focused: bool) -> Style {
     if focused {
-        Style::default().fg(Color::Green)
+        Style::default().fg(Color::Magenta)
     } else {
         Style::default().fg(Color::DarkGray)
     }
