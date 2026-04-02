@@ -1,8 +1,4 @@
-use std::{collections::VecDeque, time::Duration};
-
-use submarine::data::{AlbumId3, AlbumWithSongsId3, Child, Playlist, PlaylistWithSongs};
-
-use crate::ui::library::LibraryState;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub enum Event {
@@ -48,13 +44,20 @@ pub enum NotifLevel {
 }
 
 #[derive(Debug)]
+pub enum PlayFrom {
+    LikedSongs,
+    Playlist(String),
+    Album(String),
+}
+
+#[derive(Debug)]
 pub enum UiCmd {
     SubmitLogin {
         url: String,
         uname: String,
         password: String,
     },
-    PlayTrack(String),
+    PlayTrack(String, PlayFrom),
     StopTrack,
     FetchPlaylists,
     FetchPlaylist(String),

@@ -1,26 +1,18 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, RwLock},
+};
 
 use submarine::data::{Child, Playlist};
 
 use crate::{core::event::SongTime, services::cache::LibaryCache};
-
-#[derive(Default, Debug)]
-pub enum MainView {
-    #[default]
-    Albums,
-    Artists,
-    Playlists,
-    Playlist(String),
-    Album(String),
-    LikedSongs,
-}
 
 #[derive(Default, Debug, Clone)]
 pub struct LibraryState {
     pub playlists: Option<Vec<Playlist>>,
     pub albums: Option<Vec<Child>>,
     pub liked_songs: Option<Vec<Child>>,
-    pub cache: Arc<LibaryCache>,
+    pub cache: Arc<RwLock<LibaryCache>>,
 
     pub now_playing: Option<Box<Child>>,
     pub queue: VecDeque<Child>,

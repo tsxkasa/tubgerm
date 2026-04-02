@@ -55,7 +55,7 @@ impl Ui {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame) {
+    pub fn render(&mut self, frame: &mut Frame<'_>) {
         match &mut self.state {
             UiState::Loading => {
                 let frames = ["|", "/", "-", "\\"];

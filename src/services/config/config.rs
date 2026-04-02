@@ -7,7 +7,7 @@ use std::{
     str,
 };
 
-use crate::services::config::config_data::Config;
+use crate::services::config::data::Config;
 
 #[derive(Debug)]
 pub struct ConfigService {

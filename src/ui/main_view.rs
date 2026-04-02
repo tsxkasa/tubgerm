@@ -184,42 +184,55 @@ pub enum MainContent {
 }
 
 impl MainContent {
-    pub fn panel_title<'a>(&self, lib: &'a LibraryState) -> &'a str {
+    pub fn panel_title(&self, lib: &LibraryState) -> String {
         match self {
-            MainContent::Albums => "Albums",
-            MainContent::Playlists => "Playlists",
-            MainContent::LikedSongs => "Liked Songs",
+            MainContent::Albums => "Albums".to_string(),
+            MainContent::Playlists => "Playlists".to_string(),
+            MainContent::LikedSongs => "Liked Songs".to_string(),
+
             MainContent::Playlist(id) => lib
                 .cache
+                .read()
+                .unwrap()
                 .playlist_cache
                 .get(id)
-                .map(|p| p.base.name.as_str())
-                .unwrap_or("Playlist"),
+                .map(|p| p.base.name.clone())
+                .unwrap_or_else(|| "Playlist".to_string()),
+
             MainContent::Album(id) => lib
                 .cache
+                .read()
+                .unwrap()
                 .album_cache
                 .get(id)
-                .map(|a| a.base.name.as_str())
-                .unwrap_or("Album"),
+                .map(|a| a.base.name.clone())
+                .unwrap_or_else(|| "Album".to_string()),
         }
     }
 
-    pub fn current_tracks<'a>(&self, lib: &'a LibraryState) -> &'a [Child] {
+    pub fn current_tracks(&self, lib: &LibraryState) -> Vec<Child> {
         match self {
-            MainContent::LikedSongs => lib.liked_songs.as_deref().unwrap_or(&[]),
+            MainContent::LikedSongs => lib.liked_songs.clone().unwrap_or_default(),
+
             MainContent::Playlist(id) => lib
                 .cache
+                .read()
+                .unwrap()
                 .playlist_cache
                 .get(id)
-                .map(|p| p.entry.as_slice())
-                .unwrap_or(&[]),
+                .map(|p| p.entry.clone())
+                .unwrap_or_default(),
+
             MainContent::Album(id) => lib
                 .cache
+                .read()
+                .unwrap()
                 .album_cache
                 .get(id)
-                .map(|a| a.song.as_slice())
-                .unwrap_or(&[]),
-            _ => &[],
+                .map(|a| a.song.clone())
+                .unwrap_or_default(),
+
+            _ => vec![],
         }
     }
 
@@ -345,14 +358,14 @@ impl MainView {
         match target {
             SidebarTarget::LikedSongs => {
                 self.main.content = MainContent::LikedSongs;
-                match (&lib.liked_songs, &lib.cache.liked_cache) {
+                match (&lib.liked_songs, &lib.cache.read().unwrap().liked_cache) {
                     (Some(songs), cache) if !songs.is_empty() || !cache.is_empty() => None,
                     _ => Some(UiCmd::FetchLikedSongs),
                 }
             }
             SidebarTarget::Albums => {
                 self.main.content = MainContent::Albums;
-                match (&lib.albums, &lib.cache.album_cache) {
+                match (&lib.albums, &lib.cache.read().unwrap().album_cache) {
                     (Some(albums), cache) if !albums.is_empty() || !cache.is_empty() => None,
                     _ => Some(UiCmd::FetchAlbums),
                 }
@@ -366,7 +379,7 @@ impl MainView {
                     if let Some(p) = playlists.get(idx) {
                         let id = p.id.clone();
                         self.main.content = MainContent::Playlist(id.clone());
-                        (!lib.cache.playlist_cache.contains_key(&id))
+                        (!lib.cache.read().unwrap().playlist_cache.contains_key(&id))
                             .then_some(UiCmd::FetchPlaylist(id))
                     } else {
                         None
@@ -406,7 +419,7 @@ impl MainView {
                             let mut ts = TableState::default();
                             ts.select(Some(0));
                             self.main.table_state = ts;
-                            (!lib.cache.album_cache.contains_key(&id))
+                            (!lib.cache.read().unwrap().album_cache.contains_key(&id))
                                 .then_some(UiCmd::FetchAlbum(id))
                         } else {
                             None
@@ -420,18 +433,33 @@ impl MainView {
                             let mut ts = TableState::default();
                             ts.select(Some(0));
                             self.main.table_state = ts;
-                            (!lib.cache.playlist_cache.contains_key(&id))
+                            (!lib.cache.read().unwrap().playlist_cache.contains_key(&id))
                                 .then_some(UiCmd::FetchPlaylist(id))
                         } else {
                             None
                         }
                     }
-                    MainContent::LikedSongs | MainContent::Playlist(_) | MainContent::Album(_) => {
-                        self.main
-                            .content
-                            .current_tracks(lib)
-                            .get(idx)
-                            .map(|t| UiCmd::PlayTrack(t.id.clone()))
+
+                    MainContent::LikedSongs => {
+                        self.main.content.current_tracks(lib).get(idx).map(|t| {
+                            UiCmd::PlayTrack(t.id.clone(), crate::core::event::PlayFrom::LikedSongs)
+                        })
+                    }
+                    MainContent::Playlist(s) => {
+                        self.main.content.current_tracks(lib).get(idx).map(|t| {
+                            UiCmd::PlayTrack(
+                                t.id.clone(),
+                                crate::core::event::PlayFrom::Playlist(s.to_string()),
+                            )
+                        })
+                    }
+                    MainContent::Album(s) => {
+                        self.main.content.current_tracks(lib).get(idx).map(|t| {
+                            UiCmd::PlayTrack(
+                                t.id.clone(),
+                                crate::core::event::PlayFrom::Album(s.to_string()),
+                            )
+                        })
                     }
                 };
             }
@@ -511,7 +539,7 @@ impl MainView {
 }
 
 impl MainView {
-    pub fn render(&mut self, frame: &mut Frame, lib: &LibraryState) {
+    pub fn render(&mut self, frame: &mut Frame<'_>, lib: &LibraryState) {
         let root = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Fill(1), Constraint::Length(4)])
@@ -581,7 +609,7 @@ impl MainView {
         frame.render_stateful_widget(list, area, &mut self.left.list_state);
     }
 
-    fn render_main(&mut self, frame: &mut Frame, area: Rect, lib: &LibraryState) {
+    fn render_main(&mut self, frame: &mut Frame<'_>, area: Rect, lib: &LibraryState) {
         let focused = self.focus == Focus::Main;
         let title = self.main.content.panel_title(lib).to_string();
         let inner = inset(area);
@@ -666,10 +694,8 @@ impl MainView {
             }
 
             MainContent::LikedSongs | MainContent::Playlist(_) | MainContent::Album(_) => {
-                let mut rows: Vec<Row> = self
-                    .main
-                    .content
-                    .current_tracks(lib)
+                let tracks = self.main.content.current_tracks(lib);
+                let mut rows: Vec<Row> = tracks
                     .iter()
                     .enumerate()
                     .map(|(i, t)| {

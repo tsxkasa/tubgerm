@@ -1,2 +1,2 @@
 pub mod config;
-pub mod config_data;
+pub mod data;
