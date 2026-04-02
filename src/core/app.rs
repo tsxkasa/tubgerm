@@ -266,6 +266,12 @@ impl App {
                             .send_modify(|d| d.liked_songs = Some(tracks.song));
                     }
                 }
+                UiCmd::FetchLyrics(s) => {
+                    if let Some(cli) = &self.client {
+                        let lyrics = cli.client().unwrap().get_lyrics(s).await?;
+                        self.library.send_modify(|d| d.lyrics = Some(lyrics));
+                    }
+                }
                 UiCmd::PlayTrack(id, from) => {
                     if let Some(cli) = &self.client {
                         let song = cli
@@ -308,6 +314,8 @@ impl App {
                             }
                         };
 
+                        let lyrics = cli.client()?.get_lyrics(id).await?;
+
                         let mut rng = rand::rng();
                         queue.shuffle(&mut rng);
 
@@ -315,6 +323,7 @@ impl App {
                             d.now_playing = track_child;
                             d.playing = true;
                             d.queue = queue.clone().into();
+                            d.lyrics = Some(lyrics);
                         });
                     }
                 }
@@ -363,8 +372,11 @@ impl App {
                             if let Some(playback) = &self.playback {
                                 let _ = playback.lock().await.play_new(raw_song).await;
                             }
+
+                            let lyrics = cli.client()?.get_lyrics(song_id).await?;
                             self.library.send_modify(|d| {
                                 d.now_playing = track_child;
+                                d.lyrics = Some(lyrics);
                                 d.playing = true;
                             });
                         }
@@ -398,8 +410,11 @@ impl App {
                             if let Some(playback) = &self.playback {
                                 let _ = playback.lock().await.play_new(raw_song).await;
                             }
+
+                            let lyrics = cli.client()?.get_lyrics(song_id).await?;
                             self.library.send_modify(|d| {
                                 d.now_playing = track_child;
+                                d.lyrics = Some(lyrics);
                                 d.playing = true;
                             });
                         }

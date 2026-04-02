@@ -63,6 +63,7 @@ pub enum UiCmd {
     FetchPlaylist(String),
     FetchAlbums,
     FetchAlbum(String),
+    FetchLyrics(String),
     FetchLikedSongs,
     Next,
     Prev,

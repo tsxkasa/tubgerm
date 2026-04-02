@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use submarine::data::{Child, Playlist};
+use submarine::data::{Child, Lyrics, Playlist};
 
 use crate::{core::event::SongTime, services::cache::LibaryCache};
 
@@ -15,6 +15,7 @@ pub struct LibraryState {
     pub cache: Arc<RwLock<LibaryCache>>,
 
     pub now_playing: Option<Box<Child>>,
+    pub lyrics: Option<Lyrics>,
     pub queue: VecDeque<Child>,
     pub recently_finished_queue: VecDeque<Child>,
     pub related_tracks: Vec<Child>,

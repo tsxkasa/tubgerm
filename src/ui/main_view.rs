@@ -13,30 +13,6 @@ use submarine::data::Child;
 
 use crate::{core::event::UiCmd, ui::library::LibraryState};
 
-const PLACEHOLDER_LYRICS: &str = "\
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-    position
-";
-
-const LYRICS_LINE_COUNT: u16 = 19;
-
 #[derive(Default, Debug, Clone, PartialEq)]
 pub enum Focus {
     #[default]
@@ -488,13 +464,24 @@ impl MainView {
                     let cur = self.right.queue_list_state.selected().unwrap_or(0);
                     self.right.queue_list_state.select(Some((cur + 1).min(max)));
                 }
-                RightPanelKind::Lyrics => {
-                    if self.right.lyrics_timed {
+                RightPanelKind::Lyrics if self.right.lyrics_timed => {
+                    if let Some(lyrics) = lib.lyrics.as_ref() {
+                        let lyrics_line_count: u16 = lyrics
+                            .value
+                            .as_deref()
+                            .unwrap_or("")
+                            .lines()
+                            .count()
+                            .try_into()
+                            .unwrap_or(u16::MAX.saturating_sub(5))
+                            + 5; // Note: +5 could overflow u16 if unwrap_or(u16::MAX) is hit! Use saturating_sub
+
                         let max =
-                            LYRICS_LINE_COUNT.saturating_sub(self.right.lyrics_visible_height);
+                            lyrics_line_count.saturating_sub(self.right.lyrics_visible_height);
                         self.right.lyrics_scroll = (self.right.lyrics_scroll + 1).min(max);
                     }
                 }
+                RightPanelKind::Lyrics => {}
                 RightPanelKind::Related => {
                     let max = lib.related_tracks.len().saturating_sub(1);
                     let cur = self.right.related_state.selected().unwrap_or(0);
@@ -819,7 +806,7 @@ impl MainView {
         let kind = self.right.kind.clone();
         match kind {
             RightPanelKind::Queue => self.render_queue(frame, inner, lib),
-            RightPanelKind::Lyrics => self.render_lyrics(frame, inner),
+            RightPanelKind::Lyrics => self.render_lyrics(frame, inner, lib),
             RightPanelKind::Related => self.render_related(frame, inner, lib),
         }
     }
@@ -909,11 +896,34 @@ impl MainView {
         frame.render_stateful_widget(list, sections[2], &mut self.right.queue_list_state);
     }
 
-    fn render_lyrics(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_lyrics(&mut self, frame: &mut Frame, area: Rect, lib: &LibraryState) {
         self.right.lyrics_visible_height = area.height;
 
+        let Some(lyrics) = lib.lyrics.as_ref() else {
+            frame.render_widget(
+                Paragraph::new("No lyrics available")
+                    .alignment(Alignment::Center)
+                    .style(Style::default().fg(Color::DarkGray)),
+                area,
+            );
+            return;
+        };
+
+        let title = lyrics.title.as_deref().unwrap_or("");
+        let artist = lyrics.artist.as_deref().unwrap_or("");
+        let value = lyrics.value.as_deref().unwrap_or("No lyrics found");
+
+        let all_lyrics = format!("{}\n{}\n{}", title, artist, value);
+
+        let lyrics_line_count: u16 = all_lyrics
+            .lines()
+            .count()
+            .try_into()
+            .unwrap_or(u16::MAX.saturating_sub(5))
+            + 5;
+
         if self.right.lyrics_timed {
-            let max_scroll = LYRICS_LINE_COUNT.saturating_sub(area.height);
+            let max_scroll = lyrics_line_count.saturating_sub(area.height);
             self.right.lyrics_scroll = self.right.lyrics_scroll.min(max_scroll);
 
             let content_area = Rect {
@@ -927,18 +937,18 @@ impl MainView {
             };
 
             frame.render_widget(
-                Paragraph::new(PLACEHOLDER_LYRICS)
+                Paragraph::new(all_lyrics)
                     .wrap(Wrap { trim: false })
                     .scroll((self.right.lyrics_scroll, 0))
                     .style(Style::default().fg(Color::DarkGray)),
                 content_area,
             );
 
-            let current = (self.right.lyrics_scroll + area.height).min(LYRICS_LINE_COUNT);
-            let pct = (current as f32 / LYRICS_LINE_COUNT as f32 * 100.0) as u16;
+            let current = (self.right.lyrics_scroll + area.height).min(lyrics_line_count);
+            let pct = (current as f32 / lyrics_line_count as f32 * 100.0) as u16;
             frame.render_widget(
                 Paragraph::new(Span::styled(
-                    format!("line {}/{} ({}%)", current, LYRICS_LINE_COUNT, pct),
+                    format!("line {}/{} ({}%)", current, lyrics_line_count, pct),
                     Style::default().fg(Color::DarkGray),
                 ))
                 .alignment(Alignment::Right),
@@ -946,7 +956,7 @@ impl MainView {
             );
         } else {
             frame.render_widget(
-                Paragraph::new(PLACEHOLDER_LYRICS)
+                Paragraph::new(all_lyrics)
                     .wrap(Wrap { trim: false })
                     .style(Style::default().fg(Color::DarkGray)),
                 area,
