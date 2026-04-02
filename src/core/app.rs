@@ -334,15 +334,18 @@ impl App {
                 }
                 UiCmd::Next => {
                     if let Some(cli) = &self.client {
+                        self.library.send_modify(|d| {
+                            if d.queue.len() > 250 {
+                                d.queue.pop_back();
+                            }
+                            if let Some(current) = d.queue.pop_front() {
+                                d.recently_finished_queue.push_back(current);
+                            }
+                        });
+
                         let song_id = { self.library.borrow().queue.front().map(|s| s.id.clone()) };
+
                         if let Some(song_id) = song_id {
-                            self.library.send_modify(|d| {
-                                if d.queue.len() > 250 {
-                                    d.queue.pop_back();
-                                }
-                                d.recently_finished_queue
-                                    .push_back(d.queue.pop_front().unwrap());
-                            });
                             let raw_song = cli
                                 .client()?
                                 .stream(
@@ -369,21 +372,15 @@ impl App {
                 }
                 UiCmd::Prev => {
                     if let Some(cli) = &self.client {
-                        let song_id = {
-                            self.library
-                                .borrow()
-                                .recently_finished_queue
-                                .back()
-                                .map(|s| s.id.clone())
-                        };
+                        self.library.send_modify(|d| {
+                            if let Some(prev) = d.recently_finished_queue.pop_back() {
+                                d.queue.push_front(prev);
+                            }
+                        });
+
+                        let song_id = { self.library.borrow().queue.front().map(|s| s.id.clone()) };
+
                         if let Some(song_id) = song_id {
-                            self.library.send_modify(|d| {
-                                if d.recently_finished_queue.len() > 50 {
-                                    d.recently_finished_queue.pop_front();
-                                }
-                                d.queue
-                                    .push_front(d.recently_finished_queue.pop_back().unwrap());
-                            });
                             let raw_song = cli
                                 .client()?
                                 .stream(
@@ -401,7 +398,6 @@ impl App {
                             if let Some(playback) = &self.playback {
                                 playback.lock().await.play_new(raw_song).await?;
                             }
-
                             self.library.send_modify(|d| {
                                 d.now_playing = track_child;
                                 d.playing = true;
@@ -420,7 +416,7 @@ impl App {
                         let playback = playback.lock().await;
                         let _ = playback.set_vol(v);
                     }
-                    // let _ = self.event_tx.send(AppEvent::VolumeChanged(v)).await;
+                    self.library.send_modify(|d| d.volume = v);
                 }
             }
         }
