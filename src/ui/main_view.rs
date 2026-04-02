@@ -190,11 +190,13 @@ impl MainContent {
             MainContent::Playlists => "Playlists",
             MainContent::LikedSongs => "Liked Songs",
             MainContent::Playlist(id) => lib
+                .cache
                 .playlist_cache
                 .get(id)
                 .map(|p| p.base.name.as_str())
                 .unwrap_or("Playlist"),
             MainContent::Album(id) => lib
+                .cache
                 .album_cache
                 .get(id)
                 .map(|a| a.base.name.as_str())
@@ -206,11 +208,13 @@ impl MainContent {
         match self {
             MainContent::LikedSongs => lib.liked_songs.as_deref().unwrap_or(&[]),
             MainContent::Playlist(id) => lib
+                .cache
                 .playlist_cache
                 .get(id)
                 .map(|p| p.entry.as_slice())
                 .unwrap_or(&[]),
             MainContent::Album(id) => lib
+                .cache
                 .album_cache
                 .get(id)
                 .map(|a| a.song.as_slice())
@@ -341,14 +345,14 @@ impl MainView {
         match target {
             SidebarTarget::LikedSongs => {
                 self.main.content = MainContent::LikedSongs;
-                match (&lib.liked_songs, &lib.liked_cache) {
+                match (&lib.liked_songs, &lib.cache.liked_cache) {
                     (Some(songs), cache) if !songs.is_empty() || !cache.is_empty() => None,
                     _ => Some(UiCmd::FetchLikedSongs),
                 }
             }
             SidebarTarget::Albums => {
                 self.main.content = MainContent::Albums;
-                match (&lib.albums, &lib.album_cache) {
+                match (&lib.albums, &lib.cache.album_cache) {
                     (Some(albums), cache) if !albums.is_empty() || !cache.is_empty() => None,
                     _ => Some(UiCmd::FetchAlbums),
                 }
@@ -362,7 +366,8 @@ impl MainView {
                     if let Some(p) = playlists.get(idx) {
                         let id = p.id.clone();
                         self.main.content = MainContent::Playlist(id.clone());
-                        (!lib.playlist_cache.contains_key(&id)).then_some(UiCmd::FetchPlaylist(id))
+                        (!lib.cache.playlist_cache.contains_key(&id))
+                            .then_some(UiCmd::FetchPlaylist(id))
                     } else {
                         None
                     }
@@ -401,7 +406,8 @@ impl MainView {
                             let mut ts = TableState::default();
                             ts.select(Some(0));
                             self.main.table_state = ts;
-                            (!lib.album_cache.contains_key(&id)).then_some(UiCmd::FetchAlbum(id))
+                            (!lib.cache.album_cache.contains_key(&id))
+                                .then_some(UiCmd::FetchAlbum(id))
                         } else {
                             None
                         }
@@ -414,7 +420,7 @@ impl MainView {
                             let mut ts = TableState::default();
                             ts.select(Some(0));
                             self.main.table_state = ts;
-                            (!lib.playlist_cache.contains_key(&id))
+                            (!lib.cache.playlist_cache.contains_key(&id))
                                 .then_some(UiCmd::FetchPlaylist(id))
                         } else {
                             None
@@ -498,6 +504,7 @@ impl MainView {
             KeyCode::Char('n') => Some(UiCmd::Next),
             KeyCode::Char('p') => Some(UiCmd::Prev),
             KeyCode::Char('l') => Some(UiCmd::Logout),
+            KeyCode::Char('s') => Some(UiCmd::StopTrack),
             _ => None,
         }
     }

@@ -4,13 +4,16 @@ use futures::StreamExt;
 use ratatui::DefaultTerminal;
 use std::time::Duration;
 use tokio::{
-    sync::mpsc::{Receiver, Sender},
+    sync::{
+        mpsc::{Receiver, Sender},
+        watch,
+    },
     time::interval,
 };
 
 use crate::{
     core::event::{AppEvent, Event, UiCmd},
-    ui::ui::Ui,
+    ui::{library::LibraryState, ui::Ui},
 };
 
 const TICK_RATE: Duration = Duration::from_millis(16);
@@ -19,8 +22,9 @@ pub async fn run(
     term: &mut DefaultTerminal,
     cmd_tx: Sender<UiCmd>,
     event_rx: Receiver<AppEvent>,
+    library_rx: watch::Receiver<LibraryState>,
 ) -> Result<()> {
-    let mut ui = Ui::new(event_rx, cmd_tx);
+    let mut ui = Ui::new(event_rx, cmd_tx, library_rx);
     let mut crossterm_events = EventStream::new();
     let mut tick = interval(TICK_RATE);
 

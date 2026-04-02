@@ -1,11 +1,8 @@
-use std::{collections::HashMap, ops::Index};
+use std::{collections::VecDeque, sync::Arc};
 
-use submarine::data::{
-    AlbumId3, AlbumWithSongsId3, ArtistId3, ArtistWithAlbumsId3, Child, IndexId3, Playlist,
-    PlaylistWithSongs,
-};
+use submarine::data::{Child, Playlist};
 
-use crate::core::event::SongTime;
+use crate::{core::event::SongTime, services::cache::LibaryCache};
 
 #[derive(Default, Debug)]
 pub enum MainView {
@@ -18,17 +15,16 @@ pub enum MainView {
     LikedSongs,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct LibraryState {
     pub playlists: Option<Vec<Playlist>>,
     pub albums: Option<Vec<Child>>,
     pub liked_songs: Option<Vec<Child>>,
-    pub playlist_cache: HashMap<String, PlaylistWithSongs>,
-    pub album_cache: HashMap<String, AlbumWithSongsId3>,
-    pub liked_cache: HashMap<String, Child>,
+    pub cache: Arc<LibaryCache>,
 
     pub now_playing: Option<Box<Child>>,
-    pub queue: Vec<Child>,
+    pub queue: VecDeque<Child>,
+    pub recently_finished_queue: VecDeque<Child>,
     pub related_tracks: Vec<Child>,
     pub progress: SongTime,
     pub volume: f64,

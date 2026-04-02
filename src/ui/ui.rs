@@ -9,7 +9,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 use ratatui_notifications::{Notification, Notifications};
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    watch,
+};
 
 use crate::{
     core::event::{AppEvent, Event, NotifLevel, UiCmd},
@@ -30,18 +33,22 @@ pub struct Ui {
     state: UiState,
     pub spinner_tick: u8,
 
-    library: LibraryState,
+    library: watch::Receiver<LibraryState>,
     event_rx: Receiver<AppEvent>,
     command_tx: Sender<UiCmd>,
     notifications: Notifications,
 }
 
 impl Ui {
-    pub fn new(event_rx: Receiver<AppEvent>, command_tx: Sender<UiCmd>) -> Self {
+    pub fn new(
+        event_rx: Receiver<AppEvent>,
+        command_tx: Sender<UiCmd>,
+        library_rx: watch::Receiver<LibraryState>,
+    ) -> Self {
         Self {
             state: UiState::Loading,
             spinner_tick: 0,
-            library: LibraryState::default(),
+            library: library_rx,
             event_rx,
             command_tx,
             notifications: Notifications::default(),
@@ -67,8 +74,8 @@ impl Ui {
                 form.render(frame);
             }
             UiState::Main(form) => {
-                // TODO: PLACEHOLDER
-                form.render(frame, &self.library);
+                let lib = self.library.borrow();
+                form.render(frame, &lib);
             }
             UiState::FatalError(msg) => {
                 frame.render_widget(
@@ -149,36 +156,6 @@ impl Ui {
                 self.notifications.add(notif)?;
             }
             AppEvent::Error(e) => self.state = UiState::FatalError(e),
-            AppEvent::PlaylistsLoaded(p) => {
-                self.library.playlists = Some(p);
-            }
-            AppEvent::AlbumsLoaded(a) => {
-                self.library.albums = Some(a);
-            }
-            AppEvent::LikedSongsLoaded(s) => {
-                self.library.liked_songs = Some(s);
-            }
-            AppEvent::NowPlaying(p) => {
-                self.library.now_playing = Some(p);
-            }
-            AppEvent::PlaybackStopped => {
-                self.library.playing = false;
-            }
-            AppEvent::PlaybackResumed => {
-                self.library.playing = true;
-            }
-            AppEvent::ProgressNow(t) => {
-                self.library.progress = t;
-            }
-            AppEvent::VolumeChanged(v) => {
-                self.library.volume = v;
-            }
-            AppEvent::PlaylistTracksLoaded(t) => {
-                self.library.playlist_cache.insert(t.base.id.clone(), *t);
-            }
-            AppEvent::AlbumTracksLoaded(t) => {
-                self.library.album_cache.insert(t.base.id.clone(), *t);
-            }
         }
         Ok(())
     }
@@ -201,10 +178,11 @@ impl Ui {
                 }
             }
             UiState::Main(form) => {
-                if self.library.playlists.is_none() {
+                let lib = self.library.borrow();
+                if lib.playlists.is_none() {
                     self.command_tx.send(UiCmd::FetchPlaylists).await?;
                 }
-                if let Some(cmd) = form.handle_key(event, &self.library) {
+                if let Some(cmd) = form.handle_key(event, &lib) {
                     self.command_tx.send(cmd).await?;
                     // self.state = UiState::Loading;
                 }

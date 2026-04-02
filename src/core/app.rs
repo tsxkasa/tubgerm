@@ -5,6 +5,7 @@ use submarine::api::get_album_list::Order;
 use tokio::sync::{
     Mutex,
     mpsc::{Receiver, Sender},
+    watch,
 };
 
 use crate::{
@@ -13,6 +14,7 @@ use crate::{
         audio::PlaybackService, client::ClientService, config::config::ConfigService,
         keyring::KeyringService,
     },
+    ui::library::LibraryState,
 };
 
 #[derive(Default, Debug)]
@@ -29,6 +31,7 @@ pub struct App {
     event_tx: Sender<AppEvent>,
     command_rx: Receiver<UiCmd>,
 
+    library: watch::Sender<LibraryState>,
     config: Option<ConfigService>,
     client: Option<ClientService>,
     keyring: Option<KeyringService>,
@@ -36,11 +39,16 @@ pub struct App {
 }
 
 impl App {
-    pub async fn run(event_tx: Sender<AppEvent>, command_rx: Receiver<UiCmd>) -> Result<()> {
+    pub async fn run(
+        event_tx: Sender<AppEvent>,
+        command_rx: Receiver<UiCmd>,
+        library_tx: watch::Sender<LibraryState>,
+    ) -> Result<()> {
         let mut app = Self {
             state: AppState::Uninitialized,
             event_tx,
             command_rx,
+            library: library_tx,
             config: None,
             client: None,
             keyring: None,
@@ -94,23 +102,21 @@ impl App {
 
         // loop send ProgressTick
         let playback = self.playback.as_ref().unwrap().clone();
-        let tx = self.event_tx.clone();
+        let library_tx = self.library.clone();
         tokio::spawn(async move {
             loop {
-                // inner scope to drop lock before waiting 250ms so UI is more responsive
+                let p = playback.lock().await;
+                if p.is_playing()
+                    && let Some(pos) = p.position()
                 {
-                    let p = playback.lock().await;
-                    if p.is_playing()
-                        && let Some(pos) = p.position()
-                    {
-                        let _ = tx
-                            .send(AppEvent::ProgressNow(SongTime {
-                                current: pos,
-                                end: p.get_end(),
-                            }))
-                            .await;
-                    }
-                } // lock drops
+                    library_tx.send_modify(|lib| {
+                        lib.progress = SongTime {
+                            current: pos,
+                            end: p.get_end(),
+                        }
+                    });
+                }
+                drop(p); // lock drops
 
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
@@ -198,7 +204,6 @@ impl App {
                 }
                 UiCmd::Logout => {
                     self.client = None;
-                    // WARN: deletes user credentials consider removing but.
                     self.keyring.as_mut().unwrap().delete_credential()?;
                     self.state = AppState::NeedsLogin;
                     let _ = self
@@ -219,19 +224,19 @@ impl App {
                             .client()?
                             .get_playlists(Some(cli.current_user()?))
                             .await?;
-                        let _ = self
-                            .event_tx
-                            .send(AppEvent::PlaylistsLoaded(playlist))
-                            .await;
+                        // let _ = self
+                        //     .event_tx
+                        //     .send(AppEvent::PlaylistsLoaded(playlist))
+                        //     .await;
                     }
                 }
                 UiCmd::FetchPlaylist(id) => {
                     if let Some(cli) = &self.client {
                         let tracks = cli.client()?.get_playlist(id).await?;
-                        let _ = self
-                            .event_tx
-                            .send(AppEvent::PlaylistTracksLoaded(Box::new(tracks)))
-                            .await;
+                        // let _ = self
+                        //     .event_tx
+                        //     .send(AppEvent::PlaylistTracksLoaded(Box::new(tracks)))
+                        //     .await;
                     }
                 }
                 UiCmd::FetchAlbums => {
@@ -245,25 +250,25 @@ impl App {
                                 None::<String>,
                             )
                             .await?;
-                        let _ = self.event_tx.send(AppEvent::AlbumsLoaded(albums)).await;
+                        // let _ = self.event_tx.send(AppEvent::AlbumsLoaded(albums)).await;
                     }
                 }
                 UiCmd::FetchAlbum(id) => {
                     if let Some(cli) = &self.client {
                         let tracks = cli.client()?.get_album(id).await?;
-                        let _ = self
-                            .event_tx
-                            .send(AppEvent::AlbumTracksLoaded(Box::new(tracks)))
-                            .await;
+                        // let _ = self
+                        //     .event_tx
+                        //     .send(AppEvent::AlbumTracksLoaded(Box::new(tracks)))
+                        //     .await;
                     }
                 }
                 UiCmd::FetchLikedSongs => {
                     if let Some(cli) = &self.client {
                         let tracks = cli.client()?.get_starred2(None::<String>).await?;
-                        let _ = self
-                            .event_tx
-                            .send(AppEvent::LikedSongsLoaded(tracks.song))
-                            .await;
+                        // let _ = self
+                        //     .event_tx
+                        //     .send(AppEvent::LikedSongsLoaded(tracks.song))
+                        //     .await;
                     }
                 }
                 UiCmd::PlayTrack(id) => {
@@ -272,16 +277,18 @@ impl App {
                             .client()?
                             .stream(&id, None, None::<String>, None, None::<String>, None, None)
                             .await?;
-                        let _ = self
-                            .event_tx
-                            .send(AppEvent::NowPlaying(Box::new(
-                                cli.client()?.get_song(&id).await?,
-                            )))
-                            .await;
+                        // let _ = self
+                        //     .event_tx
+                        //     .send(AppEvent::NowPlaying(Box::new(
+                        //         cli.client()?.get_song(&id).await?,
+                        //     )))
+                        //     .await;
                         if let Some(playback) = &self.playback {
                             playback.lock().await.play_new(song).await?;
                         }
-                        let _ = self.event_tx.send(AppEvent::PlaybackResumed).await;
+
+                        // let _ = self.event_tx.send(AppEvent::PlaybackResumed).await;
+                        // let _ = self.event_tx.send(AppEvent::QueueGenerated(queue)).await;
                     }
                 }
                 UiCmd::Pause => {
@@ -289,14 +296,15 @@ impl App {
                         let playback = playback.lock().await;
                         playback.pause()?;
                     }
-                    let _ = self.event_tx.send(AppEvent::PlaybackStopped).await;
+                    // let _ = self.event_tx.send(AppEvent::PlaybackStopped).await;
                 }
                 UiCmd::Resume => {
                     if let Some(playback) = &self.playback {
                         let playback = playback.lock().await;
                         playback.play()?;
                     }
-                    let _ = self.event_tx.send(AppEvent::PlaybackResumed).await;
+
+                    // let _ = self.event_tx.send(AppEvent::PlaybackResumed).await;
                 }
                 UiCmd::Prev => {}
                 UiCmd::Next => {}
@@ -311,7 +319,7 @@ impl App {
                         let playback = playback.lock().await;
                         let _ = playback.set_vol(v);
                     }
-                    let _ = self.event_tx.send(AppEvent::VolumeChanged(v)).await;
+                    // let _ = self.event_tx.send(AppEvent::VolumeChanged(v)).await;
                 }
             }
         }
@@ -332,7 +340,7 @@ impl App {
                     }
                 }
                 if let Some(k) = &self.keyring
-                    && let Err(e) = k.set_password(password)
+                    && let Err(_) = k.set_password(password)
                 {
                     // TODO: log instead
                     // self.warn(format!("Keyring save failed: {}", e)).await?;
