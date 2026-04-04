@@ -11,7 +11,7 @@ pub struct ClientService {
 
 impl ClientService {
     pub async fn create_client(&mut self, url: &str, uname: &str, pw: &str) -> Result<()> {
-        self.current_user = Some(uname.clone().to_string());
+        self.current_user = Some(uname.to_string());
         let auth = AuthBuilder::new(uname, "1.16.1")
             .client_name("org.tubgerm")
             .hashed(pw);
