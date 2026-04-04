@@ -223,11 +223,19 @@ impl MainContent {
     }
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub enum SearchMode {
+    #[default]
+    Typing,
+    Navigating,
+}
+
 #[derive(Debug, Default)]
 pub struct SearchState {
     pub query: String,
     pub matches: Vec<usize>,
     pub cursor: usize,
+    pub mode: SearchMode,
 }
 
 impl SearchState {
@@ -296,7 +304,7 @@ impl Default for MainPanelState {
         Self {
             content: MainContent::default(),
             table_state,
-            search: Some(SearchState::default()),
+            search: None,
         }
     }
 }
@@ -553,7 +561,7 @@ impl MainView {
                     let cur = self.right.queue_list_state.selected().unwrap_or(0);
                     self.right.queue_list_state.select(Some((cur + 1).min(max)));
                 }
-                RightPanelKind::Lyrics if self.right.lyrics_timed => {
+                RightPanelKind::Lyrics => {
                     if let Some(lyrics) = lib.lyrics.as_ref() {
                         let lyrics_line_count: u16 = lyrics
                             .value
@@ -563,14 +571,13 @@ impl MainView {
                             .count()
                             .try_into()
                             .unwrap_or(u16::MAX.saturating_sub(5))
-                            + 5; // Note: +5 could overflow u16 if unwrap_or(u16::MAX) is hit! Use saturating_sub
+                            + 5;
 
                         let max =
                             lyrics_line_count.saturating_sub(self.right.lyrics_visible_height);
                         self.right.lyrics_scroll = (self.right.lyrics_scroll + 1).min(max);
                     }
                 }
-                RightPanelKind::Lyrics => {}
                 RightPanelKind::Related => {
                     let max = lib.related_tracks.len().saturating_sub(1);
                     let cur = self.right.related_state.selected().unwrap_or(0);
@@ -600,60 +607,82 @@ impl MainView {
     }
 
     fn handle_search(&mut self, key: KeyEvent, lib: &LibraryState) -> Option<UiCmd> {
-        let search = self.main.search.as_mut().unwrap();
-
-        match key.code {
-            KeyCode::Esc => {
-                self.main.search = None;
-            }
-            KeyCode::Enter => {
-                if let Some(&idx) = search.matches.get(search.cursor) {
-                    self.main.table_state.select(Some(idx));
+        match self.main.search.as_ref().unwrap().mode {
+            SearchMode::Typing => match key.code {
+                KeyCode::Esc => {
+                    self.main.search = None;
+                    None
                 }
-                self.main.search = None;
-            }
-            KeyCode::Char('n') => {
-                let search = self.main.search.as_mut().unwrap();
-                if !search.matches.is_empty() {
-                    search.cursor = (search.cursor + 1) % search.matches.len();
-                    let idx = search.matches[search.cursor];
-                    self.main.table_state.select(Some(idx));
+                KeyCode::Enter => {
+                    let search = self.main.search.as_mut().unwrap();
+                    if !search.matches.is_empty() {
+                        search.mode = SearchMode::Navigating;
+                        self.main.table_state.select(Some(search.matches[0]));
+                    }
+                    None
                 }
-            }
-            KeyCode::Char('N') => {
-                let search = self.main.search.as_mut().unwrap();
-                if !search.matches.is_empty() {
-                    search.cursor = search
-                        .cursor
-                        .checked_sub(1)
-                        .unwrap_or(search.matches.len().saturating_sub(1));
-                    let idx = search.matches[search.cursor];
-                    self.main.table_state.select(Some(idx));
+                KeyCode::Backspace => {
+                    let mut search = self.main.search.take().unwrap();
+                    search.query.pop();
+                    let q = search.query.clone();
+                    search.rebuild(&q, lib, &self.main.content);
+                    if let Some(&idx) = search.matches.first() {
+                        self.main.table_state.select(Some(idx));
+                    }
+                    self.main.search = Some(search);
+                    None
                 }
-            }
-            KeyCode::Backspace => {
-                let mut search = self.main.search.take().unwrap();
-                search.query.pop();
-                let q = search.query.clone();
-                search.rebuild(&q, lib, &self.main.content);
-                if let Some(&idx) = search.matches.first() {
-                    self.main.table_state.select(Some(idx));
+                KeyCode::Char(c) => {
+                    let mut search = self.main.search.take().unwrap();
+                    search.query.push(c);
+                    let q = search.query.clone();
+                    search.rebuild(&q, lib, &self.main.content);
+                    if let Some(&idx) = search.matches.first() {
+                        self.main.table_state.select(Some(idx));
+                    }
+                    self.main.search = Some(search);
+                    None
                 }
-                self.main.search = Some(search);
-            }
-            KeyCode::Char(c) if !matches!(key.modifiers, KeyModifiers::CONTROL) => {
-                let mut search = self.main.search.take().unwrap();
-                search.query.push(c);
-                let q = search.query.clone();
-                search.rebuild(&q, lib, &self.main.content);
-                if let Some(&idx) = search.matches.first() {
-                    self.main.table_state.select(Some(idx));
+                _ => None,
+            },
+            SearchMode::Navigating => match key.code {
+                KeyCode::Esc | KeyCode::Enter => {
+                    self.main.search = None;
+                    None
                 }
-                self.main.search = Some(search);
-            }
-            _ => {}
+                KeyCode::Char('n') => {
+                    let search = self.main.search.as_mut().unwrap();
+                    if !search.matches.is_empty() {
+                        search.cursor = (search.cursor + 1) % search.matches.len();
+                        self.main
+                            .table_state
+                            .select(Some(search.matches[search.cursor]));
+                    }
+                    None
+                }
+                KeyCode::Char('N') => {
+                    let search = self.main.search.as_mut().unwrap();
+                    if !search.matches.is_empty() {
+                        search.cursor = search
+                            .cursor
+                            .checked_sub(1)
+                            .unwrap_or(search.matches.len().saturating_sub(1));
+                        self.main
+                            .table_state
+                            .select(Some(search.matches[search.cursor]));
+                    }
+                    None
+                }
+                KeyCode::Char(c) => {
+                    let mut search = self.main.search.take().unwrap();
+                    search.mode = SearchMode::Typing;
+                    search.query.push(c);
+                    self.main.search = Some(search);
+                    None
+                }
+                _ => None,
+            },
         }
-        None
     }
 
     fn handle_playbar(&self, key: KeyEvent, lib: &LibraryState) -> Option<UiCmd> {
@@ -885,9 +914,14 @@ impl MainView {
             } else {
                 Color::Magenta
             };
+
+            let mode_indicator = match &search.mode {
+                SearchMode::Typing => "/ ",
+                SearchMode::Navigating => "n ",
+            };
             frame.render_widget(
                 Paragraph::new(Line::from(vec![
-                    Span::styled("/ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(mode_indicator, Style::default().fg(Color::Magenta)),
                     Span::styled(search.query.as_str(), Style::default().fg(Color::White)),
                     Span::styled(format!("  {}", match_info), Style::default().fg(color)),
                 ])),
