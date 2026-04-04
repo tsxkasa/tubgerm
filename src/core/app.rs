@@ -36,7 +36,7 @@ pub struct App {
     config: Option<ConfigService>,
     client: Option<ClientService>,
     keyring: Option<KeyringService>,
-    playback: Option<Arc<Mutex<PlaybackService>>>,
+    playback: Arc<Mutex<PlaybackService>>,
 }
 
 impl App {
@@ -53,7 +53,7 @@ impl App {
             config: None,
             client: None,
             keyring: None,
-            playback: None,
+            playback: Arc::new(Mutex::new(PlaybackService::new()?)),
         };
 
         app.init().await?;
@@ -99,10 +99,9 @@ impl App {
 
     async fn init(&mut self) -> Result<()> {
         self.client = Some(ClientService::default());
-        self.playback = Some(Arc::new(Mutex::new(PlaybackService::new()?)));
 
         // loop send ProgressTick
-        let playback = self.playback.as_ref().unwrap().clone();
+        let playback = self.playback.clone();
         let library_tx = self.library.clone();
         tokio::spawn(async move {
             loop {
@@ -287,9 +286,7 @@ impl App {
                             .stream(&id, None, None::<String>, None, None::<String>, None, None)
                             .await?;
                         let track_child = cli.client()?.get_song(&id).await?;
-                        if let Some(playback) = &self.playback {
-                            let _ = playback.lock().await.play_new(song).await;
-                        }
+                        let _ = self.playback.lock().await.play_new(song).await;
 
                         let mut queue = match from {
                             super::event::PlayFrom::LikedSongs => self
@@ -342,17 +339,13 @@ impl App {
                     }
                 }
                 UiCmd::Pause => {
-                    if let Some(playback) = &self.playback {
-                        let playback = playback.lock().await;
-                        let _ = playback.pause();
-                    }
+                    let playback = self.playback.lock().await;
+                    let _ = playback.pause();
                     self.library.send_modify(|d| d.playing = false);
                 }
                 UiCmd::Resume => {
-                    if let Some(playback) = &self.playback {
-                        let playback = playback.lock().await;
-                        let _ = playback.play();
-                    }
+                    let playback = self.playback.lock().await;
+                    let _ = playback.play();
                     self.library.send_modify(|d| d.playing = true);
                 }
                 UiCmd::Next => {
@@ -382,9 +375,7 @@ impl App {
                                 )
                                 .await?;
                             let track_child = cli.client()?.get_song(&song_id).await?;
-                            if let Some(playback) = &self.playback {
-                                let _ = playback.lock().await.play_new(raw_song).await;
-                            }
+                            let _ = self.playback.lock().await.play_new(raw_song).await;
 
                             let lyrics = cli
                                 .client()?
@@ -425,9 +416,7 @@ impl App {
                                 )
                                 .await?;
                             let track_child = cli.client()?.get_song(&song_id).await?;
-                            if let Some(playback) = &self.playback {
-                                let _ = playback.lock().await.play_new(raw_song).await;
-                            }
+                            let _ = self.playback.lock().await.play_new(raw_song).await;
 
                             let lyrics = cli
                                 .client()?
@@ -445,16 +434,12 @@ impl App {
                     }
                 }
                 UiCmd::StopTrack => {
-                    if let Some(playback) = &self.playback {
-                        let playback = playback.lock().await;
-                        let _ = playback.stop();
-                    }
+                    let playback = self.playback.lock().await;
+                    let _ = playback.stop();
                 }
                 UiCmd::SetVolume(v) => {
-                    if let Some(playback) = &self.playback {
-                        let playback = playback.lock().await;
-                        let _ = playback.set_vol(v);
-                    }
+                    let playback = self.playback.lock().await;
+                    let _ = playback.set_vol(v);
                     self.library.send_modify(|d| d.volume = v);
                 }
             }

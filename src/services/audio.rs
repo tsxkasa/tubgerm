@@ -21,13 +21,15 @@ impl PlaybackService {
 
     pub async fn play_new(&mut self, song: Vec<u8>) -> Result<()> {
         self.player.stop();
+        self.player.clear();
         let cursor = Cursor::new(song);
-        let song = rodio::Decoder::new(cursor)?;
+        let song = rodio::Decoder::new(cursor)?.buffered();
         self.total_duration = song
             .total_duration()
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
         self.player.append(song);
+        self.play()?;
         Ok(())
     }
 
