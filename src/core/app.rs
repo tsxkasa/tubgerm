@@ -12,8 +12,8 @@ use tokio::sync::{
 use crate::{
     core::event::{AppEvent, NotifLevel, SongTime, UiCmd},
     services::{
-        audio::PlaybackService, client::ClientService, config::config::ConfigService,
-        keyring::KeyringService,
+        audio::PlaybackService, config::config::ConfigService, keyring::KeyringService,
+        subsonic::client::ClientService,
     },
     ui::library::LibraryState,
 };

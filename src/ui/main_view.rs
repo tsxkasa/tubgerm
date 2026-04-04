@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -251,6 +251,17 @@ impl MainPanelState {
         let cur = self.table_state.selected().unwrap_or(0);
         self.table_state.select(Some(cur.saturating_sub(1)));
     }
+
+    fn scroll_half_page_down(&mut self, lib: &LibraryState) {
+        let max = self.content.len(lib).saturating_sub(1);
+        let cur = self.table_state.selected().unwrap_or(0);
+        self.table_state.select(Some((cur + 20).min(max)));
+    }
+
+    fn scroll_half_page_up(&mut self) {
+        let cur = self.table_state.selected().unwrap_or(0);
+        self.table_state.select(Some(cur.saturating_sub(20)));
+    }
 }
 
 #[derive(Debug, Default)]
@@ -368,10 +379,19 @@ impl MainView {
     }
 
     fn handle_main(&mut self, key: KeyEvent, lib: &LibraryState) -> Option<UiCmd> {
-        match key.code {
-            KeyCode::Char('j') => self.main.select_next(lib),
-            KeyCode::Char('k') => self.main.select_prev(),
-            KeyCode::Char('h') => {
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('j'), _) => self.main.select_next(lib),
+            (KeyCode::Char('k'), _) => self.main.select_prev(),
+
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                self.main.scroll_half_page_down(lib);
+            }
+
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                self.main.scroll_half_page_up();
+            }
+
+            (KeyCode::Char('h'), _) => {
                 return match &self.main.content {
                     MainContent::Album(_) => {
                         self.main.content = MainContent::Albums;
@@ -384,7 +404,8 @@ impl MainView {
                     _ => None,
                 };
             }
-            KeyCode::Enter | KeyCode::Char('l') => {
+
+            (KeyCode::Enter, _) | (KeyCode::Char('l'), _) => {
                 let idx = self.main.table_state.selected().unwrap_or(0);
                 return match &self.main.content {
                     MainContent::Albums => {
