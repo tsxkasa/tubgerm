@@ -268,7 +268,15 @@ impl App {
                 }
                 UiCmd::FetchLyrics(s) => {
                     if let Some(cli) = &self.client {
-                        let lyrics = cli.client().unwrap().get_lyrics(s).await?;
+                        let track_child = cli.client()?.get_song(s).await?;
+                        let lyrics = cli
+                            .client()
+                            .unwrap()
+                            .get_lyrics(
+                                Some(track_child.title.clone()),
+                                Some(track_child.artist.clone().unwrap_or_default()),
+                            )
+                            .await?;
                         self.library.send_modify(|d| d.lyrics = Some(lyrics));
                     }
                 }
@@ -278,7 +286,7 @@ impl App {
                             .client()?
                             .stream(&id, None, None::<String>, None, None::<String>, None, None)
                             .await?;
-                        let track_child = Some(Box::new(cli.client()?.get_song(&id).await?));
+                        let track_child = cli.client()?.get_song(&id).await?;
                         if let Some(playback) = &self.playback {
                             let _ = playback.lock().await.play_new(song).await;
                         }
@@ -314,13 +322,19 @@ impl App {
                             }
                         };
 
-                        let lyrics = cli.client()?.get_lyrics(id).await?;
+                        let lyrics = cli
+                            .client()?
+                            .get_lyrics(
+                                Some(track_child.title.clone()),
+                                Some(track_child.artist.clone().unwrap_or_default()),
+                            )
+                            .await?;
 
                         let mut rng = rand::rng();
                         queue.shuffle(&mut rng);
 
                         self.library.send_modify(|d| {
-                            d.now_playing = track_child;
+                            d.now_playing = Some(Box::new(track_child));
                             d.playing = true;
                             d.queue = queue.clone().into();
                             d.lyrics = Some(lyrics);
@@ -367,15 +381,20 @@ impl App {
                                     None,
                                 )
                                 .await?;
-                            let track_child =
-                                Some(Box::new(cli.client()?.get_song(&song_id).await?));
+                            let track_child = cli.client()?.get_song(&song_id).await?;
                             if let Some(playback) = &self.playback {
                                 let _ = playback.lock().await.play_new(raw_song).await;
                             }
 
-                            let lyrics = cli.client()?.get_lyrics(song_id).await?;
+                            let lyrics = cli
+                                .client()?
+                                .get_lyrics(
+                                    Some(track_child.title.clone()),
+                                    Some(track_child.artist.clone().unwrap_or_default()),
+                                )
+                                .await?;
                             self.library.send_modify(|d| {
-                                d.now_playing = track_child;
+                                d.now_playing = Some(Box::new(track_child));
                                 d.lyrics = Some(lyrics);
                                 d.playing = true;
                             });
@@ -405,15 +424,20 @@ impl App {
                                     None,
                                 )
                                 .await?;
-                            let track_child =
-                                Some(Box::new(cli.client()?.get_song(&song_id).await?));
+                            let track_child = cli.client()?.get_song(&song_id).await?;
                             if let Some(playback) = &self.playback {
                                 let _ = playback.lock().await.play_new(raw_song).await;
                             }
 
-                            let lyrics = cli.client()?.get_lyrics(song_id).await?;
+                            let lyrics = cli
+                                .client()?
+                                .get_lyrics(
+                                    Some(track_child.title.clone()),
+                                    Some(track_child.artist.clone().unwrap_or_default()),
+                                )
+                                .await?;
                             self.library.send_modify(|d| {
-                                d.now_playing = track_child;
+                                d.now_playing = Some(Box::new(track_child));
                                 d.lyrics = Some(lyrics);
                                 d.playing = true;
                             });

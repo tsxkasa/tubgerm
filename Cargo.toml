@@ -29,3 +29,6 @@ ratatui-textarea = "0.8.0"
 ratatui-notifications = "0.1.0"
 enum-iterator = "2.3.0"
 rodio = "0.22.2"
+
+[patch.crates-io]
+submarine = { path = "./patches/submarine/" }
