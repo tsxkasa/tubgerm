@@ -198,8 +198,4 @@ impl Ui {
     pub fn event_rx(&mut self) -> &mut Receiver<AppEvent> {
         &mut self.event_rx
     }
-
-    pub fn command_tx(&mut self) -> &mut Sender<UiCmd> {
-        &mut self.command_tx
-    }
 }

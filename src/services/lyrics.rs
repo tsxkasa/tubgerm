@@ -1,2 +1,2 @@
 #[derive(Debug)]
-pub struct LyricService {}
+pub struct LyricService;

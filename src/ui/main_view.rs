@@ -223,10 +223,70 @@ impl MainContent {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct SearchState {
+    pub query: String,
+    pub matches: Vec<usize>,
+    pub cursor: usize,
+}
+
+impl SearchState {
+    fn rebuild(&mut self, query: &str, lib: &LibraryState, content: &MainContent) {
+        self.query = query.to_lowercase();
+        self.matches = match content {
+            MainContent::Albums => lib
+                .albums
+                .as_ref()
+                .map(|v| {
+                    v.iter()
+                        .enumerate()
+                        .filter(|(_, a)| {
+                            a.name.to_lowercase().contains(&self.query)
+                                || a.artist
+                                    .as_deref()
+                                    .unwrap_or("")
+                                    .to_lowercase()
+                                    .contains(&self.query)
+                        })
+                        .map(|(i, _)| i)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            MainContent::Playlists => lib
+                .playlists
+                .as_ref()
+                .map(|v| {
+                    v.iter()
+                        .enumerate()
+                        .filter(|(_, p)| p.name.to_lowercase().contains(&self.query))
+                        .map(|(i, _)| i)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            MainContent::LikedSongs | MainContent::Playlist(_) | MainContent::Album(_) => content
+                .current_tracks(lib)
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| {
+                    t.title.to_lowercase().contains(&self.query)
+                        || t.artist
+                            .as_deref()
+                            .unwrap_or("")
+                            .to_lowercase()
+                            .contains(&self.query)
+                })
+                .map(|(i, _)| i)
+                .collect(),
+        };
+        self.cursor = 0;
+    }
+}
+
 #[derive(Debug)]
 pub struct MainPanelState {
     pub content: MainContent,
     pub table_state: TableState,
+    pub search: Option<SearchState>,
 }
 
 impl Default for MainPanelState {
@@ -236,6 +296,7 @@ impl Default for MainPanelState {
         Self {
             content: MainContent::default(),
             table_state,
+            search: Some(SearchState::default()),
         }
     }
 }
@@ -285,6 +346,9 @@ pub struct MainView {
 
 impl MainView {
     pub fn handle_key(&mut self, key: KeyEvent, lib: &LibraryState) -> Option<UiCmd> {
+        if self.focus == Focus::Main && self.main.search.is_some() {
+            return self.handle_search(key, lib);
+        }
         match key.code {
             KeyCode::Tab => {
                 self.focus = match self.focus {
@@ -403,6 +467,10 @@ impl MainView {
                     }
                     _ => None,
                 };
+            }
+
+            (KeyCode::Char('/'), _) => {
+                self.main.search = Some(SearchState::default());
             }
 
             (KeyCode::Enter, _) | (KeyCode::Char('l'), _) => {
@@ -531,6 +599,63 @@ impl MainView {
         None
     }
 
+    fn handle_search(&mut self, key: KeyEvent, lib: &LibraryState) -> Option<UiCmd> {
+        let search = self.main.search.as_mut().unwrap();
+
+        match key.code {
+            KeyCode::Esc => {
+                self.main.search = None;
+            }
+            KeyCode::Enter => {
+                if let Some(&idx) = search.matches.get(search.cursor) {
+                    self.main.table_state.select(Some(idx));
+                }
+                self.main.search = None;
+            }
+            KeyCode::Char('n') => {
+                let search = self.main.search.as_mut().unwrap();
+                if !search.matches.is_empty() {
+                    search.cursor = (search.cursor + 1) % search.matches.len();
+                    let idx = search.matches[search.cursor];
+                    self.main.table_state.select(Some(idx));
+                }
+            }
+            KeyCode::Char('N') => {
+                let search = self.main.search.as_mut().unwrap();
+                if !search.matches.is_empty() {
+                    search.cursor = search
+                        .cursor
+                        .checked_sub(1)
+                        .unwrap_or(search.matches.len().saturating_sub(1));
+                    let idx = search.matches[search.cursor];
+                    self.main.table_state.select(Some(idx));
+                }
+            }
+            KeyCode::Backspace => {
+                let mut search = self.main.search.take().unwrap();
+                search.query.pop();
+                let q = search.query.clone();
+                search.rebuild(&q, lib, &self.main.content);
+                if let Some(&idx) = search.matches.first() {
+                    self.main.table_state.select(Some(idx));
+                }
+                self.main.search = Some(search);
+            }
+            KeyCode::Char(c) if !matches!(key.modifiers, KeyModifiers::CONTROL) => {
+                let mut search = self.main.search.take().unwrap();
+                search.query.push(c);
+                let q = search.query.clone();
+                search.rebuild(&q, lib, &self.main.content);
+                if let Some(&idx) = search.matches.first() {
+                    self.main.table_state.select(Some(idx));
+                }
+                self.main.search = Some(search);
+            }
+            _ => {}
+        }
+        None
+    }
+
     fn handle_playbar(&self, key: KeyEvent, lib: &LibraryState) -> Option<UiCmd> {
         match key.code {
             KeyCode::Char('-') => Some(UiCmd::SetVolume((lib.volume - 0.05).clamp(0.0, 1.0))),
@@ -618,9 +743,19 @@ impl MainView {
     }
 
     fn render_main(&mut self, frame: &mut Frame<'_>, area: Rect, lib: &LibraryState) {
+        let (table_area, search_area) = if self.main.search.is_some() {
+            let split = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Fill(1), Constraint::Length(1)])
+                .split(area);
+            (split[0], Some(split[1]))
+        } else {
+            (area, None)
+        };
+
         let focused = self.focus == Focus::Main;
         let title = self.main.content.panel_title(lib).to_string();
-        let inner = inset(area);
+        let inner = inset(table_area);
         let sel = self.main.table_state.selected().unwrap_or(0);
         let total = self.main.content.len(lib);
         let visible_rows = inner.height.saturating_sub(2) as usize;
@@ -737,6 +872,27 @@ impl MainView {
                 .highlight_symbol("► ");
                 frame.render_stateful_widget(table, area, &mut self.main.table_state);
             }
+        }
+
+        if let (Some(sa), Some(search)) = (search_area, &self.main.search) {
+            let match_info = if search.matches.is_empty() {
+                "no matches".to_string()
+            } else {
+                format!("[{}/{}]", search.cursor + 1, search.matches.len())
+            };
+            let color = if search.matches.is_empty() {
+                Color::Red
+            } else {
+                Color::Magenta
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("/ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(search.query.as_str(), Style::default().fg(Color::White)),
+                    Span::styled(format!("  {}", match_info), Style::default().fg(color)),
+                ])),
+                sa,
+            );
         }
 
         if total > visible_rows {

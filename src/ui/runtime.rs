@@ -13,7 +13,7 @@ use tokio::{
 
 use crate::{
     core::event::{AppEvent, Event, UiCmd},
-    ui::{library::LibraryState, ui::Ui},
+    ui::{library::LibraryState, tui::Ui},
 };
 
 const TICK_RATE: Duration = Duration::from_millis(16);
