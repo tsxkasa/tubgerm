@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use color_eyre::eyre::{OptionExt, Result};
 use rand::seq::SliceRandom;
 use submarine::api::get_album_list::Order;
 use tokio::sync::{
-    Mutex,
+    Mutex, mpsc,
     mpsc::{Receiver, Sender},
     watch,
 };
@@ -27,10 +27,17 @@ enum AppState {
     Exited,
 }
 
+#[derive(Debug)]
+enum InternalAppEvent {
+    SongEnded,
+    PositionChanged(SongTime),
+}
+
 pub struct App {
     state: AppState,
     event_tx: Sender<AppEvent>,
     command_rx: Receiver<UiCmd>,
+    internal_rx: Receiver<InternalAppEvent>,
 
     library: watch::Sender<LibraryState>,
     config: Option<ConfigService>,
@@ -45,10 +52,12 @@ impl App {
         command_rx: Receiver<UiCmd>,
         library_tx: watch::Sender<LibraryState>,
     ) -> Result<()> {
+        let (internal_tx, internal_rx) = mpsc::channel::<InternalAppEvent>(8);
         let mut app = Self {
             state: AppState::Uninitialized,
             event_tx,
             command_rx,
+            internal_rx,
             library: library_tx,
             config: None,
             client: None,
@@ -56,7 +65,7 @@ impl App {
             playback: Arc::new(Mutex::new(PlaybackService::new()?)),
         };
 
-        app.init().await?;
+        app.init(internal_tx).await?;
         app.event_loop().await?;
         Ok(())
     }
@@ -97,28 +106,43 @@ impl App {
         Ok(())
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, internal_tx: Sender<InternalAppEvent>) -> Result<()> {
         self.client = Some(ClientService::default());
 
         // loop send ProgressTick
         let playback = self.playback.clone();
-        let library_tx = self.library.clone();
+        // let library_tx = self.library.clone();
         tokio::spawn(async move {
-            loop {
-                let p = playback.lock().await;
-                if p.is_playing()
-                    && let Some(pos) = p.position()
-                {
-                    library_tx.send_modify(|lib| {
-                        lib.progress = SongTime {
-                            current: pos,
-                            end: p.get_end(),
-                        }
-                    });
-                }
-                drop(p); // lock drops
+            let mut ended_streak = 0u8;
 
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            loop {
+                {
+                    let p = playback.lock().await;
+
+                    if p.has_song() {
+                        if p.song_finished() {
+                            ended_streak += 1;
+                            if ended_streak >= 2 {
+                                ended_streak = 0;
+                                let _ = internal_tx.send(InternalAppEvent::SongEnded).await;
+                            }
+                        } else {
+                            ended_streak = 0;
+                            if let Some(pos) = p.position() {
+                                let _ = internal_tx
+                                    .send(InternalAppEvent::PositionChanged(SongTime {
+                                        current: pos,
+                                        end: p.get_end(),
+                                    }))
+                                    .await;
+                            }
+                        }
+                    } else {
+                        ended_streak = 0;
+                    }
+                } // lock drop
+
+                tokio::time::sleep(Duration::from_millis(250)).await;
             }
         });
 
@@ -184,265 +208,282 @@ impl App {
     }
 
     async fn event_loop(&mut self) -> Result<()> {
-        while let Some(cmd) = self.command_rx.recv().await {
-            match cmd {
-                UiCmd::SubmitLogin {
-                    url,
-                    uname,
-                    password,
-                } => {
-                    if let Err(e) = self.try_login(&url, &uname, &password).await {
-                        self.error(format!("Could not login: {}", e)).await?;
-                        let _ = self
-                            .event_tx
-                            .send(AppEvent::NeedsLogin {
-                                server: url,
-                                username: uname,
-                            })
-                            .await;
-                    }
-                }
-                UiCmd::Logout => {
-                    self.client = None;
-                    self.keyring.as_mut().unwrap().delete_credential()?;
-                    self.state = AppState::NeedsLogin;
-                    let _ = self
-                        .event_tx
-                        .send(AppEvent::NeedsLogin {
-                            server: String::new(),
-                            username: String::new(),
-                        })
-                        .await;
-                }
-                UiCmd::Exit => {
-                    self.client = None;
-                    self.state = AppState::Exited;
-                }
-                // playbacks
-                UiCmd::FetchPlaylists => {
-                    if let Some(cli) = &self.client {
-                        let playlist = cli
-                            .client()?
-                            .get_playlists(Some(cli.current_user()?))
-                            .await?;
-                        self.library.send_modify(|d| d.playlists = Some(playlist));
-                    }
-                }
-                UiCmd::FetchPlaylist(id) => {
-                    if let Some(cli) = &self.client {
-                        let tracks = cli.client()?.get_playlist(id).await?;
-                        let id = tracks.base.id.clone();
-                        let cache = { self.library.borrow().cache.clone() }; // Ref dropped here
-                        cache.write().unwrap().playlist_cache.insert(id, tracks);
-                    }
-                }
-                UiCmd::FetchAlbums => {
-                    if let Some(cli) = &self.client {
-                        let albums = cli
-                            .client()?
-                            .get_album_list2(
-                                Order::AlphabeticalByName,
-                                Some(i16::MAX as usize),
-                                None,
-                                None::<String>,
-                            )
-                            .await?;
-                        self.library.send_modify(|d| d.albums = Some(albums));
-                    }
-                }
-                UiCmd::FetchAlbum(id) => {
-                    if let Some(cli) = &self.client {
-                        let tracks = cli.client()?.get_album(id).await?;
-                        let id = tracks.base.id.clone();
-                        let cache = { self.library.borrow().cache.clone() }; // Ref dropped here
-                        cache.write().unwrap().album_cache.insert(id, tracks);
-                    }
-                }
-                UiCmd::FetchLikedSongs => {
-                    if let Some(cli) = &self.client {
-                        let tracks = cli.client()?.get_starred2(None::<String>).await?;
-                        self.library
-                            .send_modify(|d| d.liked_songs = Some(tracks.song));
-                    }
-                }
-                UiCmd::FetchLyrics(s) => {
-                    if let Some(cli) = &self.client {
-                        let track_child = cli.client()?.get_song(s).await?;
-                        let lyrics = cli
-                            .client()
-                            .unwrap()
-                            .get_lyrics(
-                                Some(track_child.title.clone()),
-                                Some(track_child.artist.clone().unwrap_or_default()),
-                            )
-                            .await?;
-                        self.library.send_modify(|d| d.lyrics = Some(lyrics));
-                    }
-                }
-                UiCmd::PlayTrack(id, from) => {
-                    if let Some(cli) = &self.client {
-                        let song = cli
-                            .client()?
-                            .stream(&id, None, None::<String>, None, None::<String>, None, None)
-                            .await?;
-                        let track_child = cli.client()?.get_song(&id).await?;
-                        let _ = self.playback.lock().await.play_new(song).await;
+        loop {
+            tokio::select! {
+                Some(cmd) = self.command_rx.recv() => {
+                    match cmd {
+                        UiCmd::SubmitLogin {
+                            url,
+                            uname,
+                            password,
+                        } => {
+                            if let Err(e) = self.try_login(&url, &uname, &password).await {
+                                self.error(format!("Could not login: {}", e)).await?;
+                                let _ = self
+                                    .event_tx
+                                    .send(AppEvent::NeedsLogin {
+                                        server: url,
+                                        username: uname,
+                                    })
+                                    .await;
+                            }
+                        }
+                        UiCmd::Logout => {
+                            self.client = None;
+                            self.keyring.as_mut().unwrap().delete_credential()?;
+                            self.state = AppState::NeedsLogin;
+                            let _ = self
+                                .event_tx
+                                .send(AppEvent::NeedsLogin {
+                                    server: String::new(),
+                                    username: String::new(),
+                                })
+                                .await;
+                        }
+                        UiCmd::Exit => {
+                            self.client = None;
+                            self.state = AppState::Exited;
+                            break;
+                        }
+                        // playbacks
+                        UiCmd::FetchPlaylists => {
+                            if let Some(cli) = &self.client {
+                                let playlist = cli
+                                    .client()?
+                                    .get_playlists(Some(cli.current_user()?))
+                                    .await?;
+                                self.library.send_modify(|d| d.playlists = Some(playlist));
+                            }
+                        }
+                        UiCmd::FetchPlaylist(id) => {
+                            if let Some(cli) = &self.client {
+                                let tracks = cli.client()?.get_playlist(id).await?;
+                                let id = tracks.base.id.clone();
+                                let cache = { self.library.borrow().cache.clone() }; // Ref dropped here
+                                cache.write().unwrap().playlist_cache.insert(id, tracks);
+                            }
+                        }
+                        UiCmd::FetchAlbums => {
+                            if let Some(cli) = &self.client {
+                                let albums = cli
+                                    .client()?
+                                    .get_album_list2(
+                                        Order::AlphabeticalByName,
+                                        Some(i16::MAX as usize),
+                                        None,
+                                        None::<String>,
+                                    )
+                                    .await?;
+                                self.library.send_modify(|d| d.albums = Some(albums));
+                            }
+                        }
+                        UiCmd::FetchAlbum(id) => {
+                            if let Some(cli) = &self.client {
+                                let tracks = cli.client()?.get_album(id).await?;
+                                let id = tracks.base.id.clone();
+                                let cache = { self.library.borrow().cache.clone() }; // Ref dropped here
+                                cache.write().unwrap().album_cache.insert(id, tracks);
+                            }
+                        }
+                        UiCmd::FetchLikedSongs => {
+                            if let Some(cli) = &self.client {
+                                let tracks = cli.client()?.get_starred2(None::<String>).await?;
+                                self.library
+                                    .send_modify(|d| d.liked_songs = Some(tracks.song));
+                            }
+                        }
+                        UiCmd::FetchLyrics(s) => {
+                            if let Some(cli) = &self.client {
+                                let track_child = cli.client()?.get_song(s).await?;
+                                let lyrics = cli
+                                    .client()
+                                    .unwrap()
+                                    .get_lyrics(
+                                        Some(track_child.title.clone()),
+                                        Some(track_child.artist.clone().unwrap_or_default()),
+                                    )
+                                    .await?;
+                                self.library.send_modify(|d| d.lyrics = Some(lyrics));
+                            }
+                        }
+                        UiCmd::PlayTrack(id, from) => {
+                            if let Some(cli) = &self.client {
+                                let song = cli
+                                    .client()?
+                                    .stream(&id, None, None::<String>, None, None::<String>, None, None)
+                                    .await?;
+                                let track_child = cli.client()?.get_song(&id).await?;
+                                let _ = self.playback.lock().await.play_new(song).await;
 
-                        let mut queue = match from {
-                            super::event::PlayFrom::LikedSongs => self
-                                .library
-                                .borrow()
-                                .liked_songs
-                                .clone()
-                                .ok_or_eyre("No liked songs")?,
+                                let mut queue = match from {
+                                    super::event::PlayFrom::LikedSongs => self
+                                        .library
+                                        .borrow()
+                                        .liked_songs
+                                        .clone()
+                                        .ok_or_eyre("No liked songs")?,
 
-                            super::event::PlayFrom::Playlist(s) => {
-                                let cache = { self.library.borrow().cache.clone() };
-                                let cached = cache.read().unwrap().playlist_cache.get(&s).cloned();
+                                    super::event::PlayFrom::Playlist(s) => {
+                                        let cache = { self.library.borrow().cache.clone() };
+                                        let cached = cache.read().unwrap().playlist_cache.get(&s).cloned();
 
-                                let playlist = match cached {
-                                    Some(p) => p,
-                                    None => cli.client()?.get_playlist(s).await?,
+                                        let playlist = match cached {
+                                            Some(p) => p,
+                                            None => cli.client()?.get_playlist(s).await?,
+                                        };
+                                        playlist.entry
+                                    }
+
+                                    super::event::PlayFrom::Album(s) => {
+                                        let cache = { self.library.borrow().cache.clone() };
+                                        let cached = cache.read().unwrap().album_cache.get(&s).cloned();
+
+                                        let album = match cached {
+                                            Some(a) => a,
+                                            None => cli.client()?.get_album(s).await?,
+                                        };
+                                        album.song
+                                    }
                                 };
-                                playlist.entry
+
+                                let lyrics = cli
+                                    .client()?
+                                    .get_lyrics(
+                                        Some(track_child.title.clone()),
+                                        Some(track_child.artist.clone().unwrap_or_default()),
+                                    )
+                                    .await?;
+
+                                let mut rng = rand::rng();
+                                queue.shuffle(&mut rng);
+
+                                self.library.send_modify(|d| {
+                                    d.now_playing = Some(Box::new(track_child));
+                                    d.playing = true;
+                                    d.queue = queue.clone().into();
+                                    d.lyrics = Some(lyrics);
+                                });
                             }
+                        }
+                        UiCmd::Pause => {
+                            let playback = self.playback.lock().await;
+                            let _ = playback.pause();
+                            self.library.send_modify(|d| d.playing = false);
+                        }
+                        UiCmd::Resume => {
+                            let playback = self.playback.lock().await;
+                            let _ = playback.play();
+                            self.library.send_modify(|d| d.playing = true);
+                        }
+                        UiCmd::Next => {
+                            let _ = self.advance_queue().await;
+                        }
+                        UiCmd::Prev => {
+                            if let Some(cli) = &self.client {
+                                self.library.send_modify(|d| {
+                                    if let Some(prev) = d.recently_finished_queue.pop_back() {
+                                        d.queue.push_front(prev);
+                                    }
+                                });
 
-                            super::event::PlayFrom::Album(s) => {
-                                let cache = { self.library.borrow().cache.clone() };
-                                let cached = cache.read().unwrap().album_cache.get(&s).cloned();
+                                let song_id = { self.library.borrow().queue.front().map(|s| s.id.clone()) };
 
-                                let album = match cached {
-                                    Some(a) => a,
-                                    None => cli.client()?.get_album(s).await?,
-                                };
-                                album.song
+                                if let Some(song_id) = song_id {
+                                    let raw_song = cli
+                                        .client()?
+                                        .stream(
+                                                &song_id,
+                                                None,
+                                                None::<String>,
+                                                None,
+                                                None::<String>,
+                                                None,
+                                                None,
+                                            )
+                                            .await?;
+                                        let track_child = cli.client()?.get_song(&song_id).await?;
+                                        let _ = self.playback.lock().await.play_new(raw_song).await;
+
+                                        let lyrics = cli
+                                            .client()?
+                                            .get_lyrics(
+                                                Some(track_child.title.clone()),
+                                                Some(track_child.artist.clone().unwrap_or_default()),
+                                            )
+                                            .await?;
+                                        self.library.send_modify(|d| {
+                                            d.now_playing = Some(Box::new(track_child));
+                                            d.lyrics = Some(lyrics);
+                                            d.playing = true;
+                                        });
+                                    }
+                                }
                             }
-                        };
-
-                        let lyrics = cli
-                            .client()?
-                            .get_lyrics(
-                                Some(track_child.title.clone()),
-                                Some(track_child.artist.clone().unwrap_or_default()),
-                            )
-                            .await?;
-
-                        let mut rng = rand::rng();
-                        queue.shuffle(&mut rng);
-
-                        self.library.send_modify(|d| {
-                            d.now_playing = Some(Box::new(track_child));
-                            d.playing = true;
-                            d.queue = queue.clone().into();
-                            d.lyrics = Some(lyrics);
-                        });
-                    }
-                }
-                UiCmd::Pause => {
-                    let playback = self.playback.lock().await;
-                    let _ = playback.pause();
-                    self.library.send_modify(|d| d.playing = false);
-                }
-                UiCmd::Resume => {
-                    let playback = self.playback.lock().await;
-                    let _ = playback.play();
-                    self.library.send_modify(|d| d.playing = true);
-                }
-                UiCmd::Next => {
-                    if let Some(cli) = &self.client {
-                        self.library.send_modify(|d| {
-                            if d.queue.len() > 250 {
-                                d.queue.pop_back();
-                            }
-                            if let Some(current) = d.queue.pop_front() {
-                                d.recently_finished_queue.push_back(current);
-                            }
-                        });
-
-                        let song_id = { self.library.borrow().queue.front().map(|s| s.id.clone()) };
-
-                        if let Some(song_id) = song_id {
-                            let raw_song = cli
-                                .client()?
-                                .stream(
-                                    &song_id,
-                                    None,
-                                    None::<String>,
-                                    None,
-                                    None::<String>,
-                                    None,
-                                    None,
-                                )
-                                .await?;
-                            let track_child = cli.client()?.get_song(&song_id).await?;
-                            let _ = self.playback.lock().await.play_new(raw_song).await;
-
-                            let lyrics = cli
-                                .client()?
-                                .get_lyrics(
-                                    Some(track_child.title.clone()),
-                                    Some(track_child.artist.clone().unwrap_or_default()),
-                                )
-                                .await?;
-                            self.library.send_modify(|d| {
-                                d.now_playing = Some(Box::new(track_child));
-                                d.lyrics = Some(lyrics);
-                                d.playing = true;
-                            });
+                        UiCmd::SetVolume(v) => {
+                            let playback = self.playback.lock().await;
+                            let _ = playback.set_vol(v);
+                            self.library.send_modify(|d| d.volume = v);
                         }
                     }
                 }
-                UiCmd::Prev => {
-                    if let Some(cli) = &self.client {
-                        self.library.send_modify(|d| {
-                            if let Some(prev) = d.recently_finished_queue.pop_back() {
-                                d.queue.push_front(prev);
-                            }
-                        });
-
-                        let song_id = { self.library.borrow().queue.front().map(|s| s.id.clone()) };
-
-                        if let Some(song_id) = song_id {
-                            let raw_song = cli
-                                .client()?
-                                .stream(
-                                    &song_id,
-                                    None,
-                                    None::<String>,
-                                    None,
-                                    None::<String>,
-                                    None,
-                                    None,
-                                )
-                                .await?;
-                            let track_child = cli.client()?.get_song(&song_id).await?;
-                            let _ = self.playback.lock().await.play_new(raw_song).await;
-
-                            let lyrics = cli
-                                .client()?
-                                .get_lyrics(
-                                    Some(track_child.title.clone()),
-                                    Some(track_child.artist.clone().unwrap_or_default()),
-                                )
-                                .await?;
-                            self.library.send_modify(|d| {
-                                d.now_playing = Some(Box::new(track_child));
-                                d.lyrics = Some(lyrics);
-                                d.playing = true;
-                            });
+                Some(internal) = self.internal_rx.recv() => {
+                    match internal {
+                        InternalAppEvent::PositionChanged(time) => {
+                            self.library.send_modify(|lib| lib.progress = time);
+                        }
+                        InternalAppEvent::SongEnded => {
+                            self.advance_queue().await?;
                         }
                     }
-                }
-                UiCmd::StopTrack => {
-                    let playback = self.playback.lock().await;
-                    let _ = playback.stop();
-                }
-                UiCmd::SetVolume(v) => {
-                    let playback = self.playback.lock().await;
-                    let _ = playback.set_vol(v);
-                    self.library.send_modify(|d| d.volume = v);
                 }
             }
+        }
+        Ok(())
+    }
+
+    async fn advance_queue(&mut self) -> Result<()> {
+        let Some(cli) = &self.client else {
+            return Ok(());
+        };
+
+        self.library.send_modify(|d| {
+            if d.queue.len() > 250 {
+                d.queue.pop_back();
+            }
+            if let Some(current) = d.queue.pop_front() {
+                d.recently_finished_queue.push_back(current);
+            }
+        });
+
+        let song_id = self.library.borrow().queue.front().map(|s| s.id.clone());
+
+        if let Some(song_id) = song_id {
+            let raw_song = cli
+                .client()?
+                .stream(
+                    &song_id,
+                    None,
+                    None::<String>,
+                    None,
+                    None::<String>,
+                    None,
+                    None,
+                )
+                .await?;
+            let track_child = cli.client()?.get_song(&song_id).await?;
+            let _ = self.playback.lock().await.play_new(raw_song).await;
+            let lyrics = cli
+                .client()?
+                .get_lyrics(
+                    Some(track_child.title.clone()),
+                    Some(track_child.artist.clone().unwrap_or_default()),
+                )
+                .await?;
+            self.library.send_modify(|d| {
+                d.now_playing = Some(Box::new(track_child));
+                d.lyrics = Some(lyrics);
+                d.playing = true;
+            });
         }
         Ok(())
     }

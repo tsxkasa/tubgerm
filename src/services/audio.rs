@@ -16,6 +16,7 @@ pub struct PlaybackService {
     _sink: MixerDeviceSink,
     player: rodio::Player,
     total_duration: f64,
+    has_song: bool,
 }
 
 impl PlaybackService {
@@ -26,20 +27,40 @@ impl PlaybackService {
             _sink,
             player,
             total_duration: 0.0,
+            has_song: false,
         })
     }
 
     pub async fn play_new(&mut self, song: Vec<u8>) -> Result<()> {
+        self.has_song = false;
         self.player.stop();
         self.player.clear();
 
         let source = SymphoniaSource::new(song)?;
-
         self.total_duration = source.duration().unwrap_or(0.0);
-
         self.player.append(source);
         self.play()?;
+
+        self.has_song = true;
         Ok(())
+    }
+
+    pub fn stop(&mut self) -> Result<()> {
+        self.has_song = false;
+        self.player.stop();
+        Ok(())
+    }
+
+    pub fn has_song(&self) -> bool {
+        self.has_song
+    }
+
+    pub fn song_finished(&self) -> bool {
+        self.has_song && self.player.empty()
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.has_song && !self.player.is_paused() && !self.player.empty()
     }
 
     pub fn pause(&self) -> Result<()> {
@@ -52,12 +73,8 @@ impl PlaybackService {
         Ok(())
     }
 
-    pub fn is_playing(&self) -> bool {
-        !self.player.is_paused()
-    }
-
     pub fn position(&self) -> Option<f64> {
-        if self.player.len() == 0 {
+        if !self.has_song || self.player.empty() {
             return None;
         }
         Some(self.player.get_pos().as_secs_f64())
@@ -65,11 +82,6 @@ impl PlaybackService {
 
     pub fn get_end(&self) -> f64 {
         self.total_duration
-    }
-
-    pub fn stop(&self) -> Result<()> {
-        self.player.stop();
-        Ok(())
     }
 
     pub fn set_vol(&self, vol: f64) -> Result<()> {
@@ -218,3 +230,4 @@ impl Source for SymphoniaSource {
         self.duration.map(Duration::from_secs_f64)
     }
 }
+

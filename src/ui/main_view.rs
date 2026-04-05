@@ -561,20 +561,12 @@ impl MainView {
                     let cur = self.right.queue_list_state.selected().unwrap_or(0);
                     self.right.queue_list_state.select(Some((cur + 1).min(max)));
                 }
+
                 RightPanelKind::Lyrics => {
                     if let Some(lyrics) = lib.lyrics.as_ref() {
-                        let lyrics_line_count: u16 = lyrics
-                            .value
-                            .as_deref()
-                            .unwrap_or("")
-                            .lines()
-                            .count()
-                            .try_into()
-                            .unwrap_or(u16::MAX.saturating_sub(5))
-                            + 5;
-
-                        let max =
-                            lyrics_line_count.saturating_sub(self.right.lyrics_visible_height);
+                        let line_count: u16 =
+                            lyrics.value.as_deref().unwrap_or("").lines().count() as u16 + 5;
+                        let max = line_count.saturating_sub(self.right.lyrics_visible_height);
                         self.right.lyrics_scroll = (self.right.lyrics_scroll + 1).min(max);
                     }
                 }
@@ -592,9 +584,7 @@ impl MainView {
                         .select(Some(cur.saturating_sub(1)));
                 }
                 RightPanelKind::Lyrics => {
-                    if self.right.lyrics_timed {
-                        self.right.lyrics_scroll = self.right.lyrics_scroll.saturating_sub(1);
-                    }
+                    self.right.lyrics_scroll = self.right.lyrics_scroll.saturating_sub(1);
                 }
                 RightPanelKind::Related => {
                     let cur = self.right.related_state.selected().unwrap_or(0);
@@ -694,7 +684,6 @@ impl MainView {
             KeyCode::Char('n') => Some(UiCmd::Next),
             KeyCode::Char('p') => Some(UiCmd::Prev),
             KeyCode::Char('l') => Some(UiCmd::Logout),
-            KeyCode::Char('s') => Some(UiCmd::StopTrack),
             _ => None,
         }
     }
